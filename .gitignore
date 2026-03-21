@@ -1,0 +1,67 @@
+# ===============================================
+# MAVEN BUILD OUTPUT
+# Never commit compiled files!
+# ===============================================
+**/target/
+**/*.jar
+**/*.war
+**/*.class
+
+# ===============================================
+# ECLIPSE IDE FILES
+# Other developers use different IDEs
+# don't force your IDE files on them
+# ===============================================
+**/.classpath
+**/.project
+**/.settings/
+**/.factorypath
+**/bin/
+
+# ===============================================
+# INTELLIJ IDEA (in case you switch later)
+# ===============================================
+**/.idea/
+**/*.iml
+**/*.iws
+**/*.ipr
+
+# ===============================================
+# VS CODE
+# ===============================================
+**/.vscode/
+
+# ===============================================
+# SPRING BOOT — SENSITIVE CONFIG
+# NEVER commit passwords or secrets!
+# ===============================================
+**/application-local.yml
+**/application-local.properties
+**/application-prod.yml
+**/application-prod.properties
+**/.env
+
+# ===============================================
+# LOGS
+# ===============================================
+*.log
+**/logs/
+**/log/
+
+# ===============================================
+# OS GENERATED FILES
+# ===============================================
+# Mac
+.DS_Store
+.AppleDouble
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# ===============================================
+# MAVEN WRAPPER (optional — keep if you use it)
+# ===============================================
+# !.mvn/wrapper/maven-wrapper.jar
+
+.metadata
