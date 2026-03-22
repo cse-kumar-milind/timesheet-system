@@ -31,7 +31,7 @@ API Gateway :8080
 | Eureka Server | 8761 | ✅ Complete |
 | API Gateway | 8080 | ✅ Complete |
 | Auth Service | 8081 | ✅ Complete |
-| Timesheet Service | 8082 | ⏳ Pending |
+| Timesheet Service | 8082 | ✅ Complete |
 | Leave Service | 8083 | ⏳ Pending |
 | Admin Service | 8084 | ⏳ Pending |
 
@@ -65,6 +65,6 @@ API Gateway :8080
 - [x] Phase 1 - Architecture Design
 - [x] Phase 2 - Auth Service
 - [x] Phase 3 - API Gateway
-- [ ] Phase 4 - Timesheet Service
+- [x] Phase 4 - Timesheet Service
 - [ ] Phase 5 - Leave Service
 - [ ] Phase 6 - Admin Service
