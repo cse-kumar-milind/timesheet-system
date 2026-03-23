@@ -1,3 +1,4 @@
+
 package com.company.authservice.service;
 
 import org.springframework.security.authentication.AuthenticationManager;
