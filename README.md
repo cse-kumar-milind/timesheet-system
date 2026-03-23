@@ -32,7 +32,7 @@ API Gateway :8080
 | API Gateway | 8080 | ✅ Complete |
 | Auth Service | 8081 | ✅ Complete |
 | Timesheet Service | 8082 | ✅ Complete |
-| Leave Service | 8083 | ⏳ Pending |
+| Leave Service | 8083 | ✅ Complete |
 | Admin Service | 8084 | ⏳ Pending |
 
 ## How to Run
@@ -66,5 +66,5 @@ API Gateway :8080
 - [x] Phase 2 - Auth Service
 - [x] Phase 3 - API Gateway
 - [x] Phase 4 - Timesheet Service
-- [ ] Phase 5 - Leave Service
+- [x] Phase 5 - Leave Service
 - [ ] Phase 6 - Admin Service
