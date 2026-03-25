@@ -7,6 +7,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.format.annotation.DateTimeFormat.ISO;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -81,27 +82,20 @@ public class TimesheetController {
 	//Manager APIs
 	
 	@GetMapping("/manager/pending")
+	@PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
 	public ResponseEntity<List<TimesheetResponse>> getPendingTimesheets(@RequestHeader("X-User-Role") String role){
 		
-		//Role check
-		if(!"MANAGER".equals(role) && !"ADMIN".equals(role)) {
-			
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
 		
 		return ResponseEntity.ok(timesheetService.getPendingTimesheets());
 	}
 	
 	@PutMapping("/manager/review/{timesheetId}")
+	@PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
 	public ResponseEntity<TimesheetResponse> reviewTimesheet(@RequestHeader("X-User-Id") Long managerId,
 															@RequestHeader("X-User-Role") String role,
 															@PathVariable Long timesheetId,
 															@Valid @RequestBody ReviewRequest request){
-		//Role check
-		if(!"MANAGER".equals(role) && !"ADMIN".equals(role)) {
-					
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
+		
 		
 		return ResponseEntity.ok(timesheetService.reviewTimesheet(timesheetId, managerId, request));
 	}

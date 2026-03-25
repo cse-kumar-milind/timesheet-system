@@ -106,7 +106,12 @@ public class JwtAuthenticationFilter
     private boolean isPublicRoute(String path) {
         return path.startsWith("/auth/signup")
             || path.startsWith("/auth/login")
-            || path.startsWith("/actuator");
+            || path.startsWith("/auth/forgot-password")
+            || path.startsWith("/actuator")
+            || path.contains("/v3/api-docs")
+            || path.contains("/swagger-ui")
+            || path.contains("/swagger-resources")
+            || path.contains("/webjars");
     }
 
     // ─── Error Helper ──────────────────────────────────

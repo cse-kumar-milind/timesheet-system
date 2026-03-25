@@ -9,11 +9,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.company.leaveservice.client.AuthServiceClient;
 import com.company.leaveservice.dto.HolidayDto;
 import com.company.leaveservice.dto.LeaveBalanceDto;
 import com.company.leaveservice.dto.LeaveRequestDto;
 import com.company.leaveservice.dto.LeaveResponseDto;
 import com.company.leaveservice.dto.LeaveReviewDto;
+import com.company.leaveservice.dto.UserResponse;
 import com.company.leaveservice.entity.Holiday;
 import com.company.leaveservice.entity.LeaveBalance;
 import com.company.leaveservice.entity.LeaveRequest;
@@ -30,7 +32,7 @@ public class LeaveService {
 	private final LeaveRequestRepository leaveRequestRepository;
 	private final LeaveBalanceRepository leaveBalanceRepository;
 	private final HolidayRepository holidayRepository;
-	
+	private final AuthServiceClient authServiceClient;
 	//Apply for leave
 	
 	@Transactional
@@ -280,9 +282,24 @@ public class LeaveService {
 
     private LeaveResponseDto mapToResponse(
             LeaveRequest l) {
+    	// ✅ Fetch user details from Auth Service
+        UserResponse user = null;
+        try {
+            user = authServiceClient
+                    .getUserById(l.getUserId());
+        } catch (Exception e) {
+            // Auth Service unavailable — use defaults
+        }
+
         return LeaveResponseDto.builder()
                 .id(l.getId())
                 .userId(l.getUserId())
+                .employeeName(user != null
+                        ? user.getFullName()
+                        : "Unknown")
+                .employeeEmail(user != null
+                        ? user.getEmail()
+                        : "Unknown")
                 .leaveType(l.getLeaveType())
                 .fromDate(l.getFromDate())
                 .toDate(l.getToDate())

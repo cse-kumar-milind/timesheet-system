@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -65,6 +66,7 @@ public class LeaveController {
 	//Manager APIs
 	
 	@GetMapping("/manager/pending")
+	@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
 	public ResponseEntity<List<LeaveResponseDto>> getPendingRequests(@RequestHeader("X-User-Role") String role){
 		
 		if (!"MANAGER".equals(role)
@@ -78,6 +80,7 @@ public class LeaveController {
 	}
 	
 	@PutMapping("/manager/review/{leaveId}")
+	@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
 	public ResponseEntity<LeaveResponseDto> reviewLeave(@RequestHeader("X-User-Id") Long managerId,
 														@RequestHeader("X-User-Role") String role,
 														@PathVariable Long leaveId,
@@ -106,14 +109,10 @@ public class LeaveController {
 	}
 	
 	@PostMapping("/holidays")
+	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Holiday> addHoliday(@RequestHeader("X-User-Role") String role,
 												@Valid @RequestBody HolidayDto request){
 		
-		if (!"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
 		
 		return ResponseEntity.status(HttpStatus.CREATED).body(leaveService.addHoliday(request));
 	}

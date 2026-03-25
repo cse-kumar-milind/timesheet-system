@@ -9,11 +9,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.company.timesheetservice.client.AuthServiceClient;
 import com.company.timesheetservice.dto.ProjectResponse;
 import com.company.timesheetservice.dto.ReviewRequest;
 import com.company.timesheetservice.dto.TimesheetEntryRequest;
 import com.company.timesheetservice.dto.TimesheetEntryResponse;
 import com.company.timesheetservice.dto.TimesheetResponse;
+import com.company.timesheetservice.dto.UserResponse;
 import com.company.timesheetservice.entity.Project;
 import com.company.timesheetservice.entity.Timesheet;
 import com.company.timesheetservice.entity.TimesheetEntry;
@@ -30,7 +32,8 @@ public class TimesheetService {
 	private final TimesheetRepository timesheetRepository;
 	private final TimesheetEntryRepository entryRepository;
 	private final ProjectRepository projectRepository;
-	
+    private final AuthServiceClient authServiceClient; // ✅ NEW
+    
 	// Maximum hours allowed per day
     private static final double MAX_DAILY_HOURS = 12.0;
     
@@ -239,9 +242,25 @@ public class TimesheetService {
                         .map(this::mapToEntryResponse)
                         .collect(Collectors.toList());
 
+     // ✅ Fetch user details from Auth Service
+        UserResponse user = null;
+        try {
+            user = authServiceClient
+                    .getUserById(t.getUserId());
+        } catch (Exception e) {
+            // Auth Service unavailable — use defaults
+        }
+
         return TimesheetResponse.builder()
                 .id(t.getId())
                 .userId(t.getUserId())
+                // ✅ Use name from Auth Service
+                .employeeName(user != null
+                        ? user.getFullName()
+                        : "Unknown")
+                .employeeEmail(user != null
+                        ? user.getEmail()
+                        : "Unknown")
                 .weekStart(t.getWeekStart())
                 .weekEnd(t.getWeekEnd())
                 .status(t.getStatus())
@@ -250,6 +269,7 @@ public class TimesheetService {
                 .reviewComment(t.getReviewComment())
                 .entries(entries)
                 .build();
+    
     }
 
     private TimesheetEntryResponse mapToEntryResponse(

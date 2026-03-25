@@ -15,6 +15,8 @@ public class TimesheetResponse {
 
     private Long id;
     private Long userId;
+    private String employeeName;   // ✅ NEW — from Auth Service
+    private String employeeEmail;  // ✅ NEW — from Auth Service
     private LocalDate weekStart;
     private LocalDate weekEnd;
     private String status;

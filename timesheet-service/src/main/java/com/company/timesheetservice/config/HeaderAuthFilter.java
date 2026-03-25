@@ -26,6 +26,18 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain)
             throws ServletException, IOException {
+    	
+    	String path = request.getRequestURI();
+
+        // ✅ Skip filter for Swagger URLs
+        if (path.contains("/v3/api-docs")
+                || path.contains("/swagger-ui")
+                || path.contains("/swagger-resources")
+                || path.contains("/webjars")
+                || path.startsWith("/actuator")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         // ✅ Read headers forwarded by Gateway
         String userId = request.getHeader("X-User-Id");

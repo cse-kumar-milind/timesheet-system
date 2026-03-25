@@ -29,6 +29,23 @@ eureka:
   instance:
     lease-renewal-interval-in-seconds: 10
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs        # JSON docs endpoint
+  swagger-ui:
+    path: /swagger-ui.html   # UI endpoint
+    operationsSorter: method
+    tagsSorter: alph
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+  circuitbreaker:
+    enabled: true
+
 management:
   endpoints:
     web:

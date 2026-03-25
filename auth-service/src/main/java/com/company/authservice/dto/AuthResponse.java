@@ -12,10 +12,10 @@ import lombok.Setter;
 public class AuthResponse {
 
     private String token;
+    private Long userId;
     private String email;
     private String fullName;
     private String role;
-    private Long userId;
 
     // What the client receives after login:
     // {

@@ -14,6 +14,8 @@ public class LeaveResponseDto {
 
     private Long id;
     private Long userId;
+    private String employeeName; 
+    private String employeeEmail;
     private String leaveType;
     private LocalDate fromDate;
     private LocalDate toDate;
