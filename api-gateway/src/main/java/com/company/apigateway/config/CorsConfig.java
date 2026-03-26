@@ -20,7 +20,8 @@ public class CorsConfig {
         // During development: localhost:3000 (React default)
         // During production: your actual domain
         config.setAllowedOrigins(List.of(
-                "http://localhost:3000"    // React dev
+                "http://localhost:3000",
+                "http://localhost:8080"
 //                "http://localhost:4200",    // Angular dev
 //                "http://localhost:5173"     // Vite dev
         ));

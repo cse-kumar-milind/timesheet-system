@@ -28,22 +28,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 	                                    FilterChain filterChain)
 	            throws ServletException, IOException {
 		 	
-//		 String path = request.getRequestURI();
-//		 
-//		 if (path.startsWith("/auth/signup")
-//			        || path.startsWith("/auth/login")
-//			        || path.startsWith("/auth/forgot-password")
-//			        || path.startsWith("/auth/users")
-//			        || path.startsWith("/actuator")
-//			        // ✅ ADD THESE
-//			        || path.contains("/auth/v3/api-docs")
-//			        || path.contains("/auth/swagger-ui")
-//			        || path.contains("/auth/swagger-resources")
-//			        || path.contains("/auth/webjars")) {
-//			    filterChain.doFilter(request, response);
-//			    return;
-//			}
+		 String path = request.getRequestURI();
 
+		 if (path.contains("/v3/api-docs") || path.contains("/swagger")) {
+		     filterChain.doFilter(request, response);
+		     return;
+		 }
 
 
 	        // 1. Read Authorization header

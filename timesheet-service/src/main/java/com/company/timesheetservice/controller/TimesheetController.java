@@ -73,8 +73,7 @@ public class TimesheetController {
 	@PostMapping("/weeks/{weekStart}/submit")
 	public ResponseEntity<TimesheetResponse> submitTimesheet(@RequestHeader("X-User-Id") Long userId, 
 															@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart){
-		System.out.println(">>> userId: " + userId);
-	    System.out.println(">>> weekStart: " + weekStart);
+		
 	    
 		return ResponseEntity.ok(timesheetService.submitTimesheet(userId, weekStart));
 	}

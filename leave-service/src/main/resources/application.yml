@@ -41,7 +41,7 @@ feign:
 
 springdoc:
   api-docs:
-    path: /v3/api-docs        # JSON docs endpoint
+    path: /leave/v3/api-docs        # JSON docs endpoint
   swagger-ui:
     path: /swagger-ui.html   # UI endpoint
     operationsSorter: method

@@ -17,7 +17,7 @@ spring:
 
 springdoc:
   api-docs:
-    path: /v3/api-docs        # JSON docs endpoint
+    path: /auth/v3/api-docs        # JSON docs endpoint
   swagger-ui:
     path: /swagger-ui.html   # UI endpoint
     operationsSorter: method
@@ -38,8 +38,8 @@ eureka:
     fetch-registry: true
   instance:
     lease-renewal-interval-in-seconds: 10
-    prefer-ip-address: true
-    ip-address: 127.0.0.1
+#    prefer-ip-address: true
+#    ip-address: 127.0.0.1
   
 management:
   endpoints:

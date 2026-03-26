@@ -12,14 +12,10 @@ import java.util.Set;
 @Configuration
 public class SwaggerConfig {
 
-    // ✅ This tells Gateway Swagger UI
-    // WHERE to find each service's API docs
-    // Each service exposes /v3/api-docs
-    // Gateway fetches and aggregates them all
-
     @Bean
     @Primary
     public SwaggerUiConfigProperties swaggerUiConfigProperties() {
+    	
         SwaggerUiConfigProperties config =
                 new SwaggerUiConfigProperties();
 

@@ -12,10 +12,11 @@ import org.springframework.stereotype.Service;
 
 import com.company.authservice.dto.AuthResponse;
 import com.company.authservice.dto.ChangeRoleRequest;
+import com.company.authservice.dto.ChangeStatusRequest;
 import com.company.authservice.dto.ForgotPasswordRequest;
 import com.company.authservice.dto.LoginRequest;
 import com.company.authservice.dto.SignupRequest;
-import com.company.authservice.dto.UpdateProfileRequest;
+import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
 import com.company.authservice.model.User;
 import com.company.authservice.repository.UserRepository;
@@ -121,25 +122,30 @@ public class AuthService {
         return mapToUserResponse(user);
     }
     
-    public UserResponse updateProfile(
+    public UserResponse updateManager(
+    		Long userId,
             String email,
-            UpdateProfileRequest request) {
+            UpdateManagerRequest request) {
 
         User user = userRepository
-                .findByEmail(email)
+                .findById(userId)
                 .orElseThrow(() -> new RuntimeException(
-                        "User not found"));
-
-        user.setFullName(request.getFullName());
-        if (request.getManagerId() != null) {
-            user.setManagerId(request.getManagerId());
+                        "User not found with id: "+userId));
+        
+        if (user.getEmail()
+                .equals(email)) {
+        	throw new RuntimeException(
+          "Admin cannot set their own manager");
         }
+        
+        user.setManagerId(request.getManagerId());
+        
 
         userRepository.save(user);
         return mapToUserResponse(user);
     }
     
- // ─── Change Role (Admin only) ──────────────────────
+ // ─── Change Role/Status (Admin only) ──────────────────────
 
     public UserResponse changeRole(
             Long userId,
@@ -152,7 +158,7 @@ public class AuthService {
                 .orElseThrow(() -> new RuntimeException(
                         "User not found with id: " + userId));
 
-        // ✅ Prevent admin from changing their own role
+        // Prevent admin from changing their own role
         if (targetUser.getEmail()
                       .equals(requestedByEmail)) {
             throw new RuntimeException(
@@ -170,6 +176,25 @@ public class AuthService {
             + " by " + requestedByEmail);
 
         return mapToUserResponse(targetUser);
+    }
+    
+    public UserResponse changeStatus(Long userId, ChangeStatusRequest request, String requestedByEmail) {
+    	
+    	User user = userRepository.findById(userId)
+    				.orElseThrow(() -> new RuntimeException("User not found with id: "+userId));
+    	
+    	// Prevent admin from changing their own status
+        if (user.getEmail()
+                      .equals(requestedByEmail)) {
+            throw new RuntimeException(
+                "Admin cannot change their own status");
+        }
+        
+    	user.setStatus(request.getStatus());
+    	
+    	userRepository.save(user);
+    	
+    	return mapToUserResponse(user);
     }
 	
 	// ─── Internal Methods ──────────────────────────────

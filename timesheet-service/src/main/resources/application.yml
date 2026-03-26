@@ -31,7 +31,7 @@ eureka:
 
 springdoc:
   api-docs:
-    path: /v3/api-docs        # JSON docs endpoint
+    path: /timesheet/v3/api-docs        # JSON docs endpoint
   swagger-ui:
     path: /swagger-ui.html   # UI endpoint
     operationsSorter: method

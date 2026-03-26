@@ -27,27 +27,7 @@ spring:
             - id: admin-service
               uri: lb://admin-service
               predicates:
-                - Path=/admin/**
-
-            - id: auth-service-docs
-              uri: lb://auth-service
-              predicates:
-                - Path=/auth/v3/api-docs
-
-            - id: timesheet-service-docs
-              uri: lb://timesheet-service
-              predicates:
-                - Path=/timesheet/v3/api-docs
-
-            - id: leave-service-docs
-              uri: lb://leave-service
-              predicates:
-                - Path=/leave/v3/api-docs
-
-            - id: admin-service-docs
-              uri: lb://admin-service
-              predicates:
-                - Path=/admin/v3/api-docs						
+                - Path=/admin/**					
 jwt:
   secret: 3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a7567c272e007b
 
@@ -60,19 +40,7 @@ eureka:
   instance:
     lease-renewal-interval-in-seconds: 10
 
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
-    urls:
-      - name: auth-service
-        url: /auth/v3/api-docs
-      - name: timesheet-service
-        url: /timesheet/v3/api-docs
-      - name: leave-service
-        url: /leave/v3/api-docs
-      - name: admin-service
-        url: /admin/v3/api-docs
-  api-docs:
+
     enabled: true
 management:
   endpoints:
@@ -80,6 +48,12 @@ management:
       exposure:
         include: health,info
 
+  tracing:
+    sampling:
+      probability: 1.0      
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG

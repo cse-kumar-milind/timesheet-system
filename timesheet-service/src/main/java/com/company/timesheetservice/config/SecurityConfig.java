@@ -30,6 +30,8 @@ public class SecurityConfig {
                 		"/actuator/**",
                 		"/v3/api-docs",
                 	    "/v3/api-docs/**",
+                	    "/timesheet/v3/api-docs",
+                	    "/timesheet/v3/api-docs/**",
                 	    "/swagger-ui/**",
                 	    "/swagger-ui.html",  
                 	    "/swagger-resources/**"

@@ -19,10 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.company.authservice.dto.AuthResponse;
 import com.company.authservice.dto.ChangeRoleRequest;
+import com.company.authservice.dto.ChangeStatusRequest;
 import com.company.authservice.dto.ForgotPasswordRequest;
 import com.company.authservice.dto.LoginRequest;
 import com.company.authservice.dto.SignupRequest;
-import com.company.authservice.dto.UpdateProfileRequest;
+import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
 import com.company.authservice.service.AuthService;
 
@@ -60,19 +61,7 @@ public class AuthController {
             "Password updated successfully!");
     }
 	
-	@PatchMapping("/users/{id}/role")
-	@PreAuthorize("hasRole('ADMIN')")
-	public ResponseEntity<UserResponse> changeRole(
-	        @PathVariable Long id,
-	        @Valid @RequestBody ChangeRoleRequest request,@AuthenticationPrincipal
-            UserDetails userDetails) {
-
-	    return ResponseEntity.ok(
-	        authService.changeRole(
-	            id,
-	            request,
-	            userDetails.getUsername()));
-	}
+	
 	
 	@GetMapping("/profile")
     public ResponseEntity<UserResponse> getProfile( @AuthenticationPrincipal UserDetails userDetails) {
@@ -82,23 +71,40 @@ public class AuthController {
                 userDetails.getUsername()));
     }
 	
-	@PutMapping("/update-profile")
-    public ResponseEntity<UserResponse> updateProfile(
+	@PatchMapping("/users/{id}/manager")
+	@PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> updateManager(@PathVariable Long id,
             @AuthenticationPrincipal
                 UserDetails userDetails,
             @Valid @RequestBody
-                UpdateProfileRequest request) {
+                UpdateManagerRequest request) {
         return ResponseEntity.ok(
-            authService.updateProfile(
-                userDetails.getUsername(), request));
+            authService.updateManager(
+                id, userDetails.getUsername(), request));
     }
-
 	
-	@GetMapping("/health-check")
+	@PatchMapping("/users/{id}/role")
 	@PreAuthorize("hasRole('ADMIN')")
-	public ResponseEntity<String> healthCheck(){
-		return ResponseEntity.ok("Auth Service is running!");
+	public ResponseEntity<UserResponse> changeRole(
+	        @PathVariable Long id, @Valid @RequestBody ChangeRoleRequest request,
+	        @AuthenticationPrincipal UserDetails userDetails) {
+
+	    return ResponseEntity.ok(
+	        authService.changeRole(
+	            id,
+	            request,
+	            userDetails.getUsername()));
 	}
+
+	@PatchMapping("/users/{id}/status")
+	@PreAuthorize("hasRole('ADMIN')")
+	public ResponseEntity<UserResponse> changeStatus(
+			@PathVariable Long id, @Valid @RequestBody ChangeStatusRequest request,
+			@AuthenticationPrincipal UserDetails userDetails){
+		
+		return ResponseEntity.ok(authService.changeStatus(id, request, userDetails.getUsername()));
+	}
+	
 	
 	@GetMapping("/users")
 	@PreAuthorize("hasRole('ADMIN')")
@@ -108,7 +114,6 @@ public class AuthController {
             authService.getAllUsers());
     }
 
-    // GET /auth/users/{id} (ADMIN or MANAGER)
 	@PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     @GetMapping("/users/{id}")
     public ResponseEntity<UserResponse> getUserById(
@@ -118,4 +123,10 @@ public class AuthController {
         return ResponseEntity.ok(
             authService.getUserById(id));
     }
+	
+	@GetMapping("/health-check")
+	@PreAuthorize("hasRole('ADMIN')")
+	public ResponseEntity<String> healthCheck(){
+		return ResponseEntity.ok("Auth Service is running!");
+	}
 }
