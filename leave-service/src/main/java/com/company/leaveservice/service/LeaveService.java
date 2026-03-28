@@ -19,6 +19,8 @@ import com.company.leaveservice.dto.UserResponse;
 import com.company.leaveservice.entity.Holiday;
 import com.company.leaveservice.entity.LeaveBalance;
 import com.company.leaveservice.entity.LeaveRequest;
+import com.company.leaveservice.event.EventPublisher;
+import com.company.leaveservice.event.LeaveStatusEvent;
 import com.company.leaveservice.repository.HolidayRepository;
 import com.company.leaveservice.repository.LeaveBalanceRepository;
 import com.company.leaveservice.repository.LeaveRequestRepository;
@@ -33,6 +35,7 @@ public class LeaveService {
 	private final LeaveBalanceRepository leaveBalanceRepository;
 	private final HolidayRepository holidayRepository;
 	private final AuthServiceClient authServiceClient;
+	private final EventPublisher eventPublisher;
 	//Apply for leave
 	
 	@Transactional
@@ -97,8 +100,19 @@ public class LeaveService {
 									.reason(request.getReason())
 									.status("SUBMITTED")
 									.build();
+		LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
 		
-		return mapToResponse(leaveRequestRepository.save(leaveRequest));
+		eventPublisher.publishLeaveApplied(LeaveStatusEvent.builder()
+		        .leaveId(saved.getId())
+		        .userId(saved.getUserId())
+		        .userEmail(authServiceClient.getUserById(userId).getEmail())
+		        .leaveType(saved.getLeaveType())
+		        .status("APPLIED")
+		        .startDate(saved.getFromDate().toString())
+		        .endDate(saved.getToDate().toString())
+		        .build());
+		
+		return mapToResponse(saved);
 	}
 	
 	//Get my leave history
@@ -261,6 +275,36 @@ public class LeaveService {
         return days;
     }
 	
+    @Transactional
+    public void initializeLeaveBalances(Long userId) {
+        int year = LocalDate.now().getYear();
+
+        // Check if balances already exist to ensure idempotency
+        if (!leaveBalanceRepository.findByUserIdAndYear(userId, year).isEmpty()) {
+            return;
+        }
+
+        List<LeaveBalance> defaultBalances = List.of(
+            createDefaultBalance(userId, "CASUAL", 12.0, year),
+            createDefaultBalance(userId, "SICK", 10.0, year),
+            createDefaultBalance(userId, "EARNED", 15.0, year),
+            createDefaultBalance(userId, "COMP_OFF", 5.0, year)
+        );
+
+        leaveBalanceRepository.saveAll(defaultBalances);
+    }
+
+    private LeaveBalance createDefaultBalance(Long userId, String type, Double days, int year) {
+        return LeaveBalance.builder()
+                .userId(userId)
+                .leaveType(type)
+                .totalDays(days)
+                .usedDays(0.0)
+                .remainingDays(days)
+                .year(year)
+                .build();
+    }
+
 	private void deductLeaveBalance(
             Long userId,
             String leaveType,

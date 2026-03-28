@@ -5,79 +5,22 @@ networks:
 
 services:
 
-  # ─── MySQL Databases ───────────────────────────────────────────
+  # ─── MySQL Database (Consolidated) ───────────────────────────
 
-  mysql-auth:
+  mysql-db:
     image: mysql:8.0
-    container_name: mysql-auth
+    container_name: mysql-db
     environment:
-      MYSQL_ROOT_PASSWORD: kilysm
-      MYSQL_DATABASE: authdb
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
-      - "3307:3306"       # host:container (3307 to avoid conflict with local MySQL)
+      - "3307:3306"
     networks:
       - timesheet-network
     volumes:
-    - mysql-auth-data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pkilysm"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 120s
-
-  mysql-timesheet:
-    image: mysql:8.0
-    container_name: mysql-timesheet
-    environment:
-      MYSQL_ROOT_PASSWORD: kilysm
-      MYSQL_DATABASE: timesheet_db
-    ports:
-      - "3308:3306"
-    networks:
-      - timesheet-network
-    volumes:
-    - mysql-timesheet-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pkilysm"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 120s
-
-  mysql-leave:
-    image: mysql:8.0
-    container_name: mysql-leave
-    environment:
-      MYSQL_ROOT_PASSWORD: kilysm
-      MYSQL_DATABASE: leave_db
-    ports:
-      - "3309:3306"
-    networks:
-      - timesheet-network
-    volumes:
-    - mysql-leave-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pkilysm"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 120s
-
-  mysql-admin:
-    image: mysql:8.0
-    container_name: mysql-admin
-    environment:
-      MYSQL_ROOT_PASSWORD: kilysm
-      MYSQL_DATABASE: admin_db
-    ports:
-      - "3310:3306"
-    networks:
-      - timesheet-network
-    volumes:
-    - mysql-admin-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pkilysm"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -100,6 +43,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── Zipkin (Distributed Tracing) ──────────────────────────────
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - timesheet-network
+
+  # ─── RabbitMQ (Message Broker) ─────────────────────────────────
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"      # AMQP port (services connect here)
+      - "15672:15672"    # Management UI (browser)
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - timesheet-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
   # ─── Auth Service ──────────────────────────────────────────────
 
   auth-service:
@@ -112,15 +88,24 @@ services:
     networks:
       - timesheet-network
     depends_on:
-      mysql-auth:
+      mysql-db:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-auth:3306/authdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: kilysm
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
+      SPRING_DATASOURCE_URL: ${AUTH_DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
   # ─── API Gateway ───────────────────────────────────────────────
 
@@ -137,7 +122,9 @@ services:
       eureka-server:
         condition: service_healthy
     environment:
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
   # ─── Timesheet Service ─────────────────────────────────────────
 
@@ -151,15 +138,22 @@ services:
     networks:
       - timesheet-network
     depends_on:
-      mysql-timesheet:
+      mysql-db:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-timesheet:3306/timesheet_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: kilysm
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
+      SPRING_DATASOURCE_URL: ${TIMESHEET_DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
   # ─── Leave Service ─────────────────────────────────────────────
 
@@ -173,15 +167,22 @@ services:
     networks:
       - timesheet-network
     depends_on:
-      mysql-leave:
+      mysql-db:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-leave:3306/leave_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: kilysm
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
+      SPRING_DATASOURCE_URL: ${LEAVE_DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
   # ─── Admin Service ─────────────────────────────────────────────
 
@@ -195,19 +196,46 @@ services:
     networks:
       - timesheet-network
     depends_on:
-      mysql-admin:
+      mysql-db:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-admin:3306/admin_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: kilysm
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_DATASOURCE_URL: ${ADMIN_DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-      # Add this at the very bottom of docker-compose.yml
+  # ─── Notification Service ──────────────────────────────────────
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "8085:8085"
+    networks:
+      - timesheet-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-smtp.mailtrap.io}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-2525}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM:-noreply@timesheet.com}
+
 volumes:
-  mysql-auth-data:
-  mysql-timesheet-data:
-  mysql-leave-data:
-  mysql-admin-data:
+  mysql-data:
+  rabbitmq-data:

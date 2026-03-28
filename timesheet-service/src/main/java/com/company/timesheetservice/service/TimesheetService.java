@@ -19,6 +19,8 @@ import com.company.timesheetservice.dto.UserResponse;
 import com.company.timesheetservice.entity.Project;
 import com.company.timesheetservice.entity.Timesheet;
 import com.company.timesheetservice.entity.TimesheetEntry;
+import com.company.timesheetservice.event.EventPublisher;
+import com.company.timesheetservice.event.TimesheetStatusEvent;
 import com.company.timesheetservice.repository.ProjectRepository;
 import com.company.timesheetservice.repository.TimesheetEntryRepository;
 import com.company.timesheetservice.repository.TimesheetRepository;
@@ -32,7 +34,8 @@ public class TimesheetService {
 	private final TimesheetRepository timesheetRepository;
 	private final TimesheetEntryRepository entryRepository;
 	private final ProjectRepository projectRepository;
-    private final AuthServiceClient authServiceClient; // ✅ NEW
+    private final AuthServiceClient authServiceClient;
+    private final EventPublisher eventPublisher;
     
 	// Maximum hours allowed per day
     private static final double MAX_DAILY_HOURS = 12.0;
@@ -155,6 +158,14 @@ public class TimesheetService {
     	timesheet.setStatus("SUBMITTED");
     	timesheet.setSubmittedAt(LocalDateTime.now());
     	timesheetRepository.save(timesheet);
+    	
+    	eventPublisher.publishTimesheetSubmitted(TimesheetStatusEvent.builder()
+    	        .timesheetId(timesheet.getId())
+    	        .userId(timesheet.getUserId())
+    	        .userEmail(authServiceClient.getUserById(userId).getEmail())
+    	        .status("SUBMITTED")
+    	        .weekStart(timesheet.getWeekStart().toString())
+    	        .build());
     	
     	return mapToTimesheetResponse(timesheet);
     }

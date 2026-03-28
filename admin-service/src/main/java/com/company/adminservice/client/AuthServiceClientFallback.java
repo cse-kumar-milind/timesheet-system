@@ -20,4 +20,9 @@ public class AuthServiceClientFallback
     public List<UserResponse> getAllUsers() {
         return List.of();
     }
+
+    @Override
+    public String deleteUserByEmail(String email) {
+        return "Fallback: Unable to delete user with email: " + email;
+    }
 }

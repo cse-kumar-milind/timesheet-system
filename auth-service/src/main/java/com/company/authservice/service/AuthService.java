@@ -9,7 +9,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 import com.company.authservice.dto.AuthResponse;
 import com.company.authservice.dto.ChangeRoleRequest;
 import com.company.authservice.dto.ChangeStatusRequest;
@@ -18,6 +18,8 @@ import com.company.authservice.dto.LoginRequest;
 import com.company.authservice.dto.SignupRequest;
 import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
+import com.company.authservice.event.EventPublisher;
+import com.company.authservice.event.UserRegisteredEvent;
 import com.company.authservice.model.User;
 import com.company.authservice.repository.UserRepository;
 import com.company.authservice.security.JwtService;
@@ -32,6 +34,7 @@ public class AuthService {
 	private final PasswordEncoder passwordEncoder;
 	private final JwtService jwtService;
 	private final AuthenticationManager authenticationManager;
+	private final EventPublisher eventPublisher;
 	
 	public String signup(SignupRequest request) {
 		
@@ -56,6 +59,14 @@ public class AuthService {
                 .build();
 		
 		userRepository.save(user);
+		
+		eventPublisher.publishUserRegistered(UserRegisteredEvent.builder()
+		        .userId(user.getId())
+		        .email(user.getEmail())
+		        .fullName(user.getFullName())
+		        .employeeCode(user.getEmployeeCode())
+		        .role(user.getRole())
+		        .build());
 	
 		
 		return "Registration successful!\nHello "+user.getFullName();
@@ -121,6 +132,14 @@ public class AuthService {
                         "User not found"));
         return mapToUserResponse(user);
     }
+
+    @Transactional
+    public void deleteUserByEmail(String email) {
+        if (!userRepository.existsByEmail(email)) {
+            throw new RuntimeException("User not found with email: " + email);
+        }
+        userRepository.deleteByEmail(email);
+    }
     
     public UserResponse updateManager(
     		Long userId,
@@ -168,6 +187,14 @@ public class AuthService {
         String oldRole = targetUser.getRole();
         targetUser.setRole(request.getRole());
         userRepository.save(targetUser);
+
+		eventPublisher.publishUserRoleChanged(UserRegisteredEvent.builder()
+		        .userId(targetUser.getId())
+		        .email(targetUser.getEmail())
+		        .fullName(targetUser.getFullName())
+		        .employeeCode(targetUser.getEmployeeCode())
+		        .role(targetUser.getRole())
+		        .build());
 
         System.out.println("Role changed: "
             + targetUser.getEmail()
