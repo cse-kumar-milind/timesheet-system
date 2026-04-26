@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.LocalDateTime;
 
 @Getter
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class UserResponse {
 
     private Long id;
@@ -21,6 +23,7 @@ public class UserResponse {
     private String email;
     private String role;
     private String status;
-    private Long managerId;
+    @Builder.Default
+    private Long managerId = 0L;
     private LocalDateTime createdAt;
 }

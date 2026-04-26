@@ -4,11 +4,13 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 @Getter
 @Setter
 @Builder
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AuthResponse {
 
     private String token;
@@ -16,13 +18,4 @@ public class AuthResponse {
     private String email;
     private String fullName;
     private String role;
-
-    // What the client receives after login:
-    // {
-    //   "token":    "eyJhbGc...",
-    //   "email":    "john@example.com",
-    //   "fullName": "John Doe",
-    //   "role":     "EMPLOYEE",
-    //   "userId":   1
-    // }
 }

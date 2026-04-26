@@ -3,9 +3,9 @@ package com.company.leaveservice.service;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
-import java.util.stream.Collectors;
-
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +21,7 @@ import com.company.leaveservice.entity.LeaveBalance;
 import com.company.leaveservice.entity.LeaveRequest;
 import com.company.leaveservice.event.EventPublisher;
 import com.company.leaveservice.event.LeaveStatusEvent;
+import com.company.leaveservice.exception.InvalidOperationException;
 import com.company.leaveservice.repository.HolidayRepository;
 import com.company.leaveservice.repository.LeaveBalanceRepository;
 import com.company.leaveservice.repository.LeaveRequestRepository;
@@ -36,21 +37,22 @@ public class LeaveService {
 	private final HolidayRepository holidayRepository;
 	private final AuthServiceClient authServiceClient;
 	private final EventPublisher eventPublisher;
-	//Apply for leave
+	private static final String SUBMITTED = "SUBMITTED";
 	
+	//Apply for leave
 	@Transactional
 	public LeaveResponseDto applyLeave(Long userId, LeaveRequestDto request) {
 		
 		//fromDate must be before toDate
 		if(request.getFromDate().isAfter(request.getToDate())) {
 			
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "From date cannot be after to date");
 		}
 		
 		//cannot apply for past dates
 		if(request.getFromDate().isBefore(LocalDate.now())) {
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Cannot apply leave for past dates");
 		}
 		
@@ -60,7 +62,7 @@ public class LeaveService {
 																		request.getFromDate(), request.getToDate());
 		
 		if(!overlapping.isEmpty()) {
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Leave dates overlap with an existing leave request");
 		}
 		
@@ -70,7 +72,7 @@ public class LeaveService {
 							request.getToDate());
 		
 		if(workingDays == 0) {
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Selected dates have no working days " +
 	                "(weekends/holidays only)");
 		}
@@ -85,7 +87,7 @@ public class LeaveService {
 									   +year+". Please contact HR."));
 		
 		if(balance.getRemainingDays() < workingDays) {
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Insufficient leave balance. " +
 	                "Available: " + balance.getRemainingDays() +
 	                " days, Required: " + workingDays + " days");
@@ -98,7 +100,7 @@ public class LeaveService {
 									.toDate(request.getToDate())
 									.totalDays(workingDays)
 									.reason(request.getReason())
-									.status("SUBMITTED")
+									.status(SUBMITTED)
 									.build();
 		LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
 		
@@ -121,7 +123,7 @@ public class LeaveService {
 		return leaveRequestRepository.findByUserIdOrderByCreatedAtDesc(userId)
 				.stream()
 				.map(this::mapToResponse)
-				.collect(Collectors.toList());
+				.toList();
 	}
 	
 	//Get My balance
@@ -132,7 +134,7 @@ public class LeaveService {
 		return leaveBalanceRepository.findByUserIdAndYear(userId, currentYear)
 				.stream()
 				.map(this::mapToBalanceDto)
-				.collect(Collectors.toList());
+				.toList();
 	}
 	
 	//Cancel leave
@@ -145,7 +147,7 @@ public class LeaveService {
 		
 		//Only owner can cancel
 		if(!leave.getUserId().equals(userId)) {
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 			                "You can only cancel your own leave");
 		}
 		
@@ -153,7 +155,7 @@ public class LeaveService {
 		if("REJECTED".equals(leave.getStatus())
                 || "CANCELLED".equals(leave.getStatus())) {
 			
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Cannot cancel a " +
 	                leave.getStatus() + " leave request");
 		}
@@ -162,7 +164,7 @@ public class LeaveService {
         if ("APPROVED".equals(leave.getStatus())
                 && leave.getFromDate()
                         .isBefore(LocalDate.now())) {
-            throw new RuntimeException(
+            throw new InvalidOperationException(
                 "Cannot cancel leave that has " +
                 "already started");
         }
@@ -184,8 +186,8 @@ public class LeaveService {
                         "Leave request not found"));
 		
 		//Only SUBMITTED leaves can be reviewed
-        if (!"SUBMITTED".equals(leave.getStatus())) {
-            throw new RuntimeException(
+        if (!SUBMITTED.equals(leave.getStatus())) {
+            throw new InvalidOperationException(
                 "Only SUBMITTED leave can be reviewed. " +
                 "Current status: " + leave.getStatus());
         }
@@ -194,7 +196,7 @@ public class LeaveService {
         if ("REJECTED".equals(request.getAction())
                 && (request.getComment() == null
                     || request.getComment().isBlank())) {
-            throw new RuntimeException(
+            throw new InvalidOperationException(
                 "Comment is mandatory when rejecting");
         }
         
@@ -221,11 +223,43 @@ public class LeaveService {
 	//get pending requests
 	public List<LeaveResponseDto> getPendingRequests(){
 		
-		return leaveRequestRepository.findByStatus("SUBMITTED")
+		return leaveRequestRepository.findByStatus(SUBMITTED)
 				.stream()
 				.map(this::mapToResponse)
-				.collect(Collectors.toList());
+				.toList();
 	}
+
+    // Soft Delete leave data (Used by RabbitMQ listener when user is deleted)
+    @Transactional
+    public void softDeleteUserData(Long userId) {
+        // 1. Cancel pending requests
+        leaveRequestRepository.cancelPendingLeaves(userId);
+        // 2. Unassign requests (using negative ID)
+        leaveRequestRepository.softDeleteUserRequests(userId);
+        // 3. Unassign balances (using negative ID)
+        leaveBalanceRepository.softDeleteUserBalances(userId);
+    }
+
+    // Admin reporting: Leave consumption by type
+    public Map<String, Long> getConsumptionStats() {
+        List<Object[]> results = leaveRequestRepository.countApprovedByType();
+        Map<String, Long> stats = new HashMap<>();
+        for (Object[] result : results) {
+            stats.put((String) result[0], (Long) result[1]);
+        }
+        return stats;
+    }
+
+    // For Employee Dashboard Summary
+    public String getNextHoliday() {
+        return holidayRepository.findFirstByHolidayDateAfterOrderByHolidayDateAsc(LocalDate.now())
+                .map(h -> h.getHolidayName() + " (" + h.getHolidayDate() + ")")
+                .orElse("No upcoming holidays");
+    }
+
+    public long getCountByStatus(String status) {
+        return leaveRequestRepository.countByStatus(status);
+    }
 	
 	//Holidays
 	public List<Holiday> getHolidays(int year){
@@ -238,7 +272,7 @@ public class LeaveService {
 		
 		if(holidayRepository.existsByHolidayDate(dto.getHolidayDate())) {
 			
-			throw new RuntimeException(
+			throw new InvalidOperationException(
 	                "Holiday already exists for date: " +
 	                        dto.getHolidayDate());
 		}
@@ -263,15 +297,14 @@ public class LeaveService {
             // Skip weekends
             if (current.getDayOfWeek() != DayOfWeek.SATURDAY
                 && current.getDayOfWeek()
-                          != DayOfWeek.SUNDAY) {
-                // Skip holidays
-                if (!holidayRepository
+                          != DayOfWeek.SUNDAY && !holidayRepository
                         .existsByHolidayDate(current)) {
-                    days++;
-                }
+                    days += 1;
+                
             }
             current = current.plusDays(1);
         }
+	
         return days;
     }
 	
@@ -338,19 +371,19 @@ public class LeaveService {
         return LeaveResponseDto.builder()
                 .id(l.getId())
                 .userId(l.getUserId())
-                .employeeName(user != null
+                .employeeName(user != null && user.getFullName() != null
                         ? user.getFullName()
-                        : "Unknown")
-                .employeeEmail(user != null
+                        : "Name information not found")
+                .employeeEmail(user != null && user.getEmail() != null
                         ? user.getEmail()
-                        : "Unknown")
-                .leaveType(l.getLeaveType())
+                        : "Email information not found")
+                .leaveType(l.getLeaveType() != null ? l.getLeaveType() : "Type not specified")
                 .fromDate(l.getFromDate())
                 .toDate(l.getToDate())
-                .totalDays(l.getTotalDays())
-                .reason(l.getReason())
-                .status(l.getStatus())
-                .managerComment(l.getManagerComment())
+                .totalDays(l.getTotalDays() != null ? l.getTotalDays() : 0.0)
+                .reason(l.getReason() != null ? l.getReason() : "No reason specified")
+                .status(l.getStatus() != null ? l.getStatus() : SUBMITTED)
+                .managerComment(l.getManagerComment() != null ? l.getManagerComment() : "No review comment yet")
                 .reviewedAt(l.getReviewedAt())
                 .createdAt(l.getCreatedAt())
                 .build();

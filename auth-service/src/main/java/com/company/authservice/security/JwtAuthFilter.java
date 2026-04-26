@@ -39,7 +39,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 	        // 1. Read Authorization header
 	        final String authHeader = request.getHeader("Authorization");
 
-	        // 2. No header or wrong format → skip
+	       
 	        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
 	            filterChain.doFilter(request, response);
 	            return;

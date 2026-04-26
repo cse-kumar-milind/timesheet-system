@@ -4,8 +4,6 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +19,8 @@ import com.company.timesheetservice.entity.Timesheet;
 import com.company.timesheetservice.entity.TimesheetEntry;
 import com.company.timesheetservice.event.EventPublisher;
 import com.company.timesheetservice.event.TimesheetStatusEvent;
+import com.company.timesheetservice.exception.InvalidOperationException;
+import com.company.timesheetservice.exception.ResourceNotFoundException;
 import com.company.timesheetservice.repository.ProjectRepository;
 import com.company.timesheetservice.repository.TimesheetEntryRepository;
 import com.company.timesheetservice.repository.TimesheetRepository;
@@ -37,6 +37,9 @@ public class TimesheetService {
     private final AuthServiceClient authServiceClient;
     private final EventPublisher eventPublisher;
     
+    private static final String SUBMITTED = "SUBMITTED";
+    private static final String DRAFT = "DRAFT";
+    
 	// Maximum hours allowed per day
     private static final double MAX_DAILY_HOURS = 12.0;
     
@@ -44,23 +47,23 @@ public class TimesheetService {
     	
     	return projectRepository.findByIsActiveTrue().stream()
     			.map(this::mapToProjectResponse)
-    			.collect(Collectors.toList());
+    			.toList();
     }
     
     public TimesheetEntryResponse logEntry(Long userId, TimesheetEntryRequest request) {
     	
     	//Cannot log entry for future dates
     	if(request.getWorkDate().isAfter(LocalDate.now())) {
-    		throw new RuntimeException("Cannot log hours for future dates");
+    		throw new InvalidOperationException("Cannot log hours for future dates");
     	}
     	
     	//validate project exists
     	Project project = projectRepository.findById(request.getProjectId())
-    			.orElseThrow(() -> new RuntimeException("Project not found"));
+    			.orElseThrow(() -> new ResourceNotFoundException("Project not found"));
     	
     	
-    	if(!project.getIsActive()) {
-    		throw new RuntimeException("Project is inactive");
+    	if(Boolean.FALSE.equals(project.getIsActive())){
+    		throw new InvalidOperationException("Project is inactive");
     	}
     	
     	//get or create timesheet for this week
@@ -72,9 +75,9 @@ public class TimesheetService {
                         userId, weekStart, weekEnd));
     	
     	// RULE 4: Cannot add entry to submitted/approved timesheet
-        if ("SUBMITTED".equals(timesheet.getStatus())
+        if (SUBMITTED.equals(timesheet.getStatus())
                 || "APPROVED".equals(timesheet.getStatus())) {
-            throw new RuntimeException(
+            throw new InvalidOperationException(
                 "Cannot modify a " + timesheet.getStatus()
                 + " timesheet");
         }
@@ -83,7 +86,7 @@ public class TimesheetService {
         
         if(entryRepository.existsByTimesheetIdAndProjectIdAndWorkDate(timesheet.getId(), project.getId(), request.getWorkDate())) {
         	
-        	throw new RuntimeException("Entry already exists for this project and date");
+        	throw new InvalidOperationException("Entry already exists for this project and date");
         }
         
         //check daily hours limit
@@ -94,7 +97,7 @@ public class TimesheetService {
         		.sum();
         
         if (existingHours + request.getHoursLogged() > MAX_DAILY_HOURS) {
-        	throw new RuntimeException(
+        	throw new InvalidOperationException(
         			"Total hours for " + request.getWorkDate() + " would exceed " + MAX_DAILY_HOURS + " hours");
         }
         
@@ -119,7 +122,7 @@ public class TimesheetService {
     public TimesheetResponse getWeeklyTimesheet(Long userId, LocalDate weekStart) {
     	
     	Timesheet timesheet = timesheetRepository.findByUserIdAndWeekStart(userId, weekStart)
-    							.orElseThrow(() -> new  RuntimeException("No timesheet found for week: "
+    							.orElseThrow(() -> new  ResourceNotFoundException("No timesheet found for week: "
     																	+ weekStart));
     	
     	return mapToTimesheetResponse(timesheet);
@@ -131,7 +134,7 @@ public class TimesheetService {
     	return timesheetRepository.findByUserIdOrderByWeekStartDesc(userId)
     			.stream()
     			.map(this::mapToTimesheetResponse)
-    			.collect(Collectors.toList());
+    			.toList();
     }
     
     //submit timesheet
@@ -139,12 +142,12 @@ public class TimesheetService {
     public TimesheetResponse submitTimesheet(Long userId, LocalDate weekStart) {
     	
     	Timesheet timesheet = timesheetRepository.findByUserIdAndWeekStart(userId, weekStart)
-    							.orElseThrow(() -> new RuntimeException("No timesheet found for week: "
+    							.orElseThrow(() -> new ResourceNotFoundException("No timesheet found for week: "
     																		+weekStart));
     	
     	//Only DRAFT timesheets can be submitted
-    	if(!"DRAFT".equals(timesheet.getStatus())) {
-    		throw new RuntimeException(
+    	if(!DRAFT.equals(timesheet.getStatus())) {
+    		throw new InvalidOperationException(
     				"Only DRAFT timesheets can be submitted. Current status: "+timesheet.getStatus());
     	}
     	
@@ -152,10 +155,10 @@ public class TimesheetService {
     	List<TimesheetEntry> entries = entryRepository.findByTimesheetId(timesheet.getId());
     	
     	if(entries.isEmpty()) {
-    		throw new RuntimeException("Cannot submit empty timesheet");
+    		throw new InvalidOperationException("Cannot submit empty timesheet");
     	}
     	
-    	timesheet.setStatus("SUBMITTED");
+    	timesheet.setStatus(SUBMITTED);
     	timesheet.setSubmittedAt(LocalDateTime.now());
     	timesheetRepository.save(timesheet);
     	
@@ -163,7 +166,7 @@ public class TimesheetService {
     	        .timesheetId(timesheet.getId())
     	        .userId(timesheet.getUserId())
     	        .userEmail(authServiceClient.getUserById(userId).getEmail())
-    	        .status("SUBMITTED")
+    	        .status(SUBMITTED)
     	        .weekStart(timesheet.getWeekStart().toString())
     	        .build());
     	
@@ -176,19 +179,18 @@ public class TimesheetService {
     	
     	Timesheet timesheet = timesheetRepository.findById(timesheetId)
     							.orElseThrow(() -> 
-    							new RuntimeException("Timesheet not found"));
+    							new ResourceNotFoundException("Timesheet not found"));
     	
     	//Only SUBMITTED timesheets can be reviewed
-    	if(!"SUBMITTED".equals(timesheet.getStatus())) {
-    		throw new RuntimeException(
-    				"Only SUBMITTED timesheets can be reviewed");
+    	if(!SUBMITTED.equals(timesheet.getStatus())) {
+    		throw new InvalidOperationException("Only SUBMITTED timesheets can be reviewed");
     	}
     	
     	// ✅ Comment mandatory for rejection
         if ("REJECTED".equals(request.getAction())
                 && (request.getComment() == null
                     || request.getComment().isBlank())) {
-            throw new RuntimeException(
+            throw new InvalidOperationException(
                 "Comment is mandatory when rejecting");
         }
         
@@ -198,7 +200,7 @@ public class TimesheetService {
         timesheet.setReviewedAt(LocalDateTime.now());
         
         if("REJECTED".equals(request.getAction())) {
-        	timesheet.setStatus("DRAFT");
+        	timesheet.setStatus(DRAFT);
         }
         
         timesheetRepository.save(timesheet);
@@ -209,10 +211,27 @@ public class TimesheetService {
     //Get pending timsheets(manager)
     public List<TimesheetResponse> getPendingTimesheets(){
     	
-    	return timesheetRepository.findByStatus("SUBMITTED")
+    	return timesheetRepository.findByStatus(SUBMITTED)
     			.stream()
     			.map(this::mapToTimesheetResponse)
-    			.collect(Collectors.toList());
+    			.toList();
+    }
+
+    // Get count of submitted/approved timesheets for a week (Admin Compliance)
+    public long getSubmittedCount(LocalDate weekStart) {
+        long submitted = timesheetRepository.countByStatusAndWeekStart(SUBMITTED, weekStart);
+        long approved = timesheetRepository.countByStatusAndWeekStart("APPROVED", weekStart);
+        return submitted + approved;
+    }
+
+    public long getCountByStatus(String status) {
+        return timesheetRepository.countByStatus(status);
+    }
+
+    // Soft Delete timesheets (Used by RabbitMQ listener when user is deleted)
+    @Transactional
+    public void softDeleteUserData(Long userId) {
+        timesheetRepository.softDeleteUserTimesheets(userId);
     }
 
     // ─── Private Helpers ───────────────────────────────
@@ -222,7 +241,7 @@ public class TimesheetService {
                 .userId(userId)
                 .weekStart(weekStart)
                 .weekEnd(weekEnd)
-                .status("DRAFT")
+                .status(DRAFT)
                 .totalHours(0.0)
                 .build();
         return timesheetRepository.save(timesheet);
@@ -251,7 +270,7 @@ public class TimesheetService {
                         .findByTimesheetId(t.getId())
                         .stream()
                         .map(this::mapToEntryResponse)
-                        .collect(Collectors.toList());
+                        .toList();
 
      // ✅ Fetch user details from Auth Service
         UserResponse user = null;
@@ -265,17 +284,17 @@ public class TimesheetService {
         return TimesheetResponse.builder()
                 .id(t.getId())
                 .userId(t.getUserId())
-                // ✅ Use name from Auth Service
-                .employeeName(user != null
+                // ✅ Use name from Auth Service with defaults
+                .employeeName(user != null && user.getFullName() != null
                         ? user.getFullName()
-                        : "Unknown")
-                .employeeEmail(user != null
+                        : "Name information not found")
+                .employeeEmail(user != null && user.getEmail() != null
                         ? user.getEmail()
-                        : "Unknown")
+                        : "Email information not found")
                 .weekStart(t.getWeekStart())
                 .weekEnd(t.getWeekEnd())
-                .status(t.getStatus())
-                .totalHours(t.getTotalHours())
+                .status(t.getStatus() != null ? t.getStatus() : DRAFT)
+                .totalHours(t.getTotalHours() != null ? t.getTotalHours() : 0.0)
                 .submittedAt(t.getSubmittedAt())
                 .reviewComment(t.getReviewComment())
                 .entries(entries)
@@ -290,8 +309,8 @@ public class TimesheetService {
                 .projectId(e.getProject().getId())
                 .projectName(e.getProject().getProjectName())
                 .workDate(e.getWorkDate())
-                .hoursLogged(e.getHoursLogged())
-                .taskSummary(e.getTaskSummary())
+                .hoursLogged(e.getHoursLogged() != null ? e.getHoursLogged() : 0.0)
+                .taskSummary(e.getTaskSummary() != null ? e.getTaskSummary() : "No detailed summary provided")
                 .createdAt(e.getCreatedAt())
                 .build();
     }

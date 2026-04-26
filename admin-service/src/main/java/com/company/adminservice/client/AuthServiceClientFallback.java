@@ -22,7 +22,7 @@ public class AuthServiceClientFallback
     }
 
     @Override
-    public String deleteUserByEmail(String email) {
-        return "Fallback: Unable to delete user with email: " + email;
+    public String deleteUserById(Long id) {
+        return "Fallback: Unable to delete user with id: " + id;
     }
 }

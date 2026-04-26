@@ -1,8 +1,6 @@
 package com.company.authservice.controller;
 
 import java.util.List;
-import java.util.Map;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,9 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -80,7 +76,7 @@ public class AuthController {
                 userDetails.getUsername()));
     }
 	
-	@Operation(summary = "Assign manager", description = "[Admin] Assign a manager to an employee")
+	@Operation(summary = "Assign manager to employee", description = "[Admin] Assign a manager to an employee")
 	@PatchMapping("/users/{id}/manager")
 	@PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> updateManager(@PathVariable Long id,
@@ -118,17 +114,15 @@ public class AuthController {
 	}
 	
 	
-	@Operation(summary = "Get all users", description = "[Admin] Fetch list of all registered users")
+	@Operation(summary = "Get all users", description = "[Admin] Internal endpoint for all users", hidden = true)
 	@GetMapping("/users")
-	@PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponse>> getAllUsers() {
 
         return ResponseEntity.ok(
             authService.getAllUsers());
     }
 
-	@Operation(summary = "Get user by ID", description = "[Manager/Admin] Fetch a specific user's details")
-	@PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+	@Operation(summary = "Get user by ID", description = "[Admin] Internal endpoint for specific user", hidden = true)
 	@GetMapping("/users/{id}")
     public ResponseEntity<UserResponse> getUserById(
             @PathVariable Long id) {
@@ -145,11 +139,10 @@ public class AuthController {
 		return ResponseEntity.ok("Auth Service is running!");
 	}
 
-    @Operation(hidden = true)
-    @PreAuthorize("hasRole('ADMIN')")
-    @DeleteMapping("/users/delete-by-email")
-    public ResponseEntity<String> deleteUserByEmail(@RequestBody String email) {
-        authService.deleteUserByEmail(email);
-        return ResponseEntity.ok("User deleted with email: " + email);
+    @Operation(summary = "Delete user", description = "[Admin] Internal endpoint for soft delete", hidden = true)
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<String> deleteUserById(@PathVariable Long id) {
+        authService.deleteUserById(id);
+        return ResponseEntity.ok("User soft-deleted with id: " + id);
     }
 }

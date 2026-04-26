@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -17,18 +16,7 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 🔴 Invalid Login Credentials
-    @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<ErrorResponse> handleBadCredentials(
-            BadCredentialsException ex,
-            HttpServletRequest request) {
-
-        return buildError(
-                ex,
-                request,
-                HttpStatus.UNAUTHORIZED
-        );
-    }
+   
 
     // 🔴 User Not Found
     @ExceptionHandler(UsernameNotFoundException.class)
@@ -36,7 +24,23 @@ public class GlobalExceptionHandler {
             UsernameNotFoundException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.NOT_FOUND);
+        return buildError(ex, request, HttpStatus.NOT_FOUND,null);
+    }
+    
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(
+    		ResourceNotFoundException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.NOT_FOUND,null);
+    }
+    
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(
+    		InvalidOperationException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.BAD_REQUEST,null);
     }
 
     // 🔴 Access Denied
@@ -45,7 +49,7 @@ public class GlobalExceptionHandler {
             AccessDeniedException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.FORBIDDEN);
+        return buildError(ex, request, HttpStatus.FORBIDDEN,"Access Denied");
     }
 
     // 🔴 Validation Errors (@Valid)
@@ -78,7 +82,7 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.BAD_REQUEST);
+        return buildError(ex, request, HttpStatus.BAD_REQUEST,null);
     }
 
     // 🔴 Catch-All Exception
@@ -87,20 +91,34 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
+        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
-    
- // 🔧 Common builder method (reusable)
+
+    // 🔴 Feign Client Exception (Inter-service calls)
+    @ExceptionHandler(feign.FeignException.class)
+    public ResponseEntity<ErrorResponse> handleFeignException(
+            feign.FeignException ex,
+            HttpServletRequest request) {
+
+        HttpStatus status = HttpStatus.resolve(ex.status()) != null 
+                ? HttpStatus.valueOf(ex.status()) 
+                : HttpStatus.INTERNAL_SERVER_ERROR;
+
+        return buildError(ex, request, status, "Downstream Service Error: " + ex.contentUTF8());
+    }
+
+    // 🔧 Common builder method (reusable)
     private ResponseEntity<ErrorResponse> buildError(
             Exception ex,
             HttpServletRequest request,
-            HttpStatus status) {
+            HttpStatus status,
+            String message) {
 
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
                 .error(status.getReasonPhrase())
-                .message(ex.getMessage())
+                .message(message != null ? message : ex.getMessage())
                 .path(request.getRequestURI())
                 .build();
 

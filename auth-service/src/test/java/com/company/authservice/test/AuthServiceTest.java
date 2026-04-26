@@ -5,6 +5,8 @@ import com.company.authservice.model.User;
 import com.company.authservice.repository.UserRepository;
 import com.company.authservice.security.JwtService;
 import com.company.authservice.service.AuthService;
+import com.company.authservice.event.EventPublisher;
+import com.company.authservice.event.UserRegisteredEvent;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +48,9 @@ class AuthServiceTest {
 
     @Mock
     private AuthenticationManager authenticationManager;
+
+    @Mock
+    private EventPublisher eventPublisher;
 
     // ✅ @InjectMocks creates real AuthService
     // and injects all @Mock objects into it
@@ -118,6 +123,8 @@ class AuthServiceTest {
                     .save(any(User.class));
             verify(passwordEncoder, times(1))
                     .encode("Password@123");
+            verify(eventPublisher, times(1))
+                    .publishUserRegistered(any(UserRegisteredEvent.class));
         }
 
         @Test
@@ -299,8 +306,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("Admin should successfully change user role")
         void changeRole_Success() {
-            when(userRepository.findByEmail(
-                    "admin@company.com"))
+            when(userRepository.findByEmail("admin@company.com"))
                     .thenReturn(Optional.of(adminUser));
             when(userRepository.findById(2L))
                     .thenReturn(Optional.of(employeeUser));
@@ -315,6 +321,8 @@ class AuthServiceTest {
             assertNotNull(response);
             verify(userRepository, times(1))
                     .save(any(User.class));
+            verify(eventPublisher, times(1))
+                    .publishUserRoleChanged(any(UserRegisteredEvent.class));
         }
 
         @Test
@@ -344,8 +352,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("Admin should not change own role")
         void changeRole_AdminCannotChangeOwnRole() {
-            when(userRepository.findByEmail(
-                    "admin@company.com"))
+            when(userRepository.findByEmail("admin@company.com"))
                     .thenReturn(Optional.of(adminUser));
             when(userRepository.findById(1L))
                     .thenReturn(Optional.of(adminUser));
@@ -402,6 +409,10 @@ class AuthServiceTest {
             request.setNewPassword("NewPass@123");
             request.setConfirmPassword("Different@123");
 
+            when(userRepository.findByEmail(
+                    "john@example.com"))
+                    .thenReturn(Optional.of(mockUser));
+
             RuntimeException exception =
                 assertThrows(RuntimeException.class,
                     () -> authService.forgotPassword(request));
@@ -430,6 +441,586 @@ class AuthServiceTest {
                 () -> authService.forgotPassword(request));
         }
     }
+    
+ // ═══════════════════════════════════════════════
+ // UPDATE MANAGER TESTS
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Update Manager Tests")
+ class UpdateManagerTests {
+
+     private UpdateManagerRequest updateManagerRequest;
+
+     @BeforeEach
+     void setUp() {
+         updateManagerRequest = new UpdateManagerRequest();
+         updateManagerRequest.setManagerId(2L);
+     }
+
+     @Test
+     @DisplayName("Should update manager successfully")
+     void updateManager_Success() {
+         User employee = User.builder()
+                 .id(2L)
+                 .email("john@example.com")
+                 .role("EMPLOYEE")
+                 .fullName("John Doe")
+                 .employeeCode("EMP001")
+                 .status("ACTIVE")
+                 .build();
+
+         when(userRepository.findById(2L))
+                 .thenReturn(Optional.of(employee));
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(employee);
+
+         // Admin updating employee's manager
+         // admin email != employee email → allowed
+         UserResponse response = authService.updateManager(
+                 2L,
+                 "admin@company.com", // requester
+                 updateManagerRequest);
+
+         assertNotNull(response);
+         verify(userRepository, times(1))
+                 .save(any(User.class));
+     }
+
+     @Test
+     @DisplayName("Should throw when admin tries to set own manager")
+     void updateManager_AdminCannotSetOwnManager() {
+         User admin = User.builder()
+                 .id(1L)
+                 .email("admin@company.com")
+                 .role("ADMIN")
+                 .status("ACTIVE")
+                 .build();
+
+         when(userRepository.findById(1L))
+                 .thenReturn(Optional.of(admin));
+
+         // Admin trying to update their own manager
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.updateManager(
+                     1L,
+                     "admin@company.com", // same email!
+                     updateManagerRequest));
+
+         assertEquals(
+             "Admin cannot set their own manager",
+             exception.getMessage());
+
+         verify(userRepository, never()).save(any());
+     }
+
+     @Test
+     @DisplayName("Should throw when user not found")
+     void updateManager_UserNotFound() {
+         when(userRepository.findById(99L))
+                 .thenReturn(Optional.empty());
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.updateManager(
+                     99L,
+                     "admin@company.com",
+                     updateManagerRequest));
+
+         assertTrue(exception.getMessage()
+             .contains("User not found with id: 99"));
+     }
+ }
+
+ // ═══════════════════════════════════════════════
+ // CHANGE STATUS TESTS
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Change Status Tests")
+ class ChangeStatusTests {
+
+     private User adminUser;
+     private User employeeUser;
+     private ChangeStatusRequest changeStatusRequest;
+
+     @BeforeEach
+     void setUp() {
+         adminUser = User.builder()
+                 .id(1L)
+                 .email("admin@company.com")
+                 .role("ADMIN")
+                 .status("ACTIVE")
+                 .fullName("Admin")
+                 .employeeCode("ADM001")
+                 .build();
+
+         employeeUser = User.builder()
+                 .id(2L)
+                 .email("john@example.com")
+                 .role("EMPLOYEE")
+                 .status("ACTIVE")
+                 .fullName("John Doe")
+                 .employeeCode("EMP001")
+                 .build();
+
+         changeStatusRequest = new ChangeStatusRequest();
+         changeStatusRequest.setStatus("INACTIVE");
+     }
+
+     @Test
+     @DisplayName("Admin should change user status successfully")
+     void changeStatus_Success() {
+         when(userRepository.findByEmail(
+                 "admin@company.com"))
+                 .thenReturn(Optional.of(adminUser));
+         when(userRepository.findById(2L))
+                 .thenReturn(Optional.of(employeeUser));
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(employeeUser);
+
+         UserResponse response = authService.changeStatus(
+                 2L,
+                 changeStatusRequest,
+                 "admin@company.com");
+
+         assertNotNull(response);
+         verify(userRepository, times(1))
+                 .save(any(User.class));
+     }
+
+     @Test
+     @DisplayName("Should activate user successfully")
+     void changeStatus_Activate() {
+         employeeUser.setStatus("INACTIVE");
+
+         ChangeStatusRequest activateRequest =
+             new ChangeStatusRequest();
+         activateRequest.setStatus("ACTIVE");
+
+         when(userRepository.findByEmail(
+                 "admin@company.com"))
+                 .thenReturn(Optional.of(adminUser));
+         when(userRepository.findById(2L))
+                 .thenReturn(Optional.of(employeeUser));
+         when(userRepository.save(any(User.class)))
+                 .thenAnswer(inv -> {
+                     User saved = inv.getArgument(0);
+                     assertEquals("ACTIVE", saved.getStatus());
+                     return saved;
+                 });
+
+         authService.changeStatus(
+                 2L, activateRequest, "admin@company.com");
+
+         verify(userRepository, times(1)).save(any());
+     }
+
+     @Test
+     @DisplayName("Non-admin should not change status")
+     void changeStatus_NotAdmin() {
+         User nonAdmin = User.builder()
+                 .id(3L)
+                 .email("employee@company.com")
+                 .role("EMPLOYEE")
+                 .build();
+
+         when(userRepository.findByEmail(
+                 "employee@company.com"))
+                 .thenReturn(Optional.of(nonAdmin));
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.changeStatus(
+                     2L,
+                     changeStatusRequest,
+                     "employee@company.com"));
+
+         assertEquals("Only ADMIN can change status",
+             exception.getMessage());
+
+         verify(userRepository, never()).save(any());
+     }
+
+     @Test
+     @DisplayName("Admin should not change own status")
+     void changeStatus_AdminCannotChangeOwnStatus() {
+         when(userRepository.findByEmail(
+                 "admin@company.com"))
+                 .thenReturn(Optional.of(adminUser));
+         when(userRepository.findById(1L))
+                 .thenReturn(Optional.of(adminUser));
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.changeStatus(
+                     1L,
+                     changeStatusRequest,
+                     "admin@company.com"));
+
+         assertEquals(
+             "Admin cannot change their own status",
+             exception.getMessage());
+     }
+
+     @Test
+     @DisplayName("Should throw when target user not found")
+     void changeStatus_UserNotFound() {
+         when(userRepository.findByEmail(
+                 "admin@company.com"))
+                 .thenReturn(Optional.of(adminUser));
+         when(userRepository.findById(99L))
+                 .thenReturn(Optional.empty());
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.changeStatus(
+                     99L,
+                     changeStatusRequest,
+                     "admin@company.com"));
+
+         assertTrue(exception.getMessage()
+             .contains("User not found with id: 99"));
+     }
+
+     @Test
+     @DisplayName("Should throw when requester not found")
+     void changeStatus_RequesterNotFound() {
+         when(userRepository.findByEmail(
+                 "unknown@company.com"))
+                 .thenReturn(Optional.empty());
+
+         assertThrows(RuntimeException.class,
+             () -> authService.changeStatus(
+                 2L,
+                 changeStatusRequest,
+                 "unknown@company.com"));
+     }
+ }
+
+ // ═══════════════════════════════════════════════
+ // DELETE USER TESTS
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Delete User Tests")
+ class DeleteUserTests {
+
+     @Test
+     @DisplayName("Should soft delete user successfully")
+     void deleteUser_Success() {
+         when(userRepository.findById(1L))
+                 .thenReturn(Optional.of(mockUser));
+         when(userRepository.save(any(User.class)))
+                 .thenAnswer(inv -> {
+                     User saved = inv.getArgument(0);
+                     // ✅ Verify soft delete behavior
+                     assertEquals("DELETED",
+                         saved.getStatus());
+                     assertTrue(saved.getEmail()
+                         .startsWith("deleted_"));
+                     assertEquals("",
+                         saved.getPassword());
+                     return saved;
+                 });
+
+         // Should not throw
+         assertDoesNotThrow(() ->
+             authService.deleteUserById(1L));
+
+         // Verify save called (soft delete)
+         verify(userRepository, times(1))
+                 .save(any(User.class));
+
+         // Verify event published
+         verify(eventPublisher, times(1))
+                 .publishUserDeleted(any());
+     }
+
+     @Test
+     @DisplayName("Should throw when user not found for delete")
+     void deleteUser_NotFound() {
+         when(userRepository.findById(99L))
+                 .thenReturn(Optional.empty());
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.deleteUserById(99L));
+
+         assertTrue(exception.getMessage()
+             .contains("User not found with id: 99"));
+
+         // Save should never be called
+         verify(userRepository, never()).save(any());
+
+         // Event should never be published
+         verify(eventPublisher, never())
+                 .publishUserDeleted(any());
+     }
+
+     @Test
+     @DisplayName("Soft delete should wipe sensitive data")
+     void deleteUser_WipesSensitiveData() {
+         mockUser.setPassword("someEncodedPassword");
+         mockUser.setEmail("john@example.com");
+
+         when(userRepository.findById(1L))
+                 .thenReturn(Optional.of(mockUser));
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(mockUser);
+
+         authService.deleteUserById(1L);
+
+         // Capture what was saved
+         verify(userRepository).save(argThat(user ->
+             user.getStatus().equals("DELETED") &&
+             user.getPassword().equals("") &&
+             user.getEmail().contains("deleted_")
+         ));
+     }
+ }
+
+ // ═══════════════════════════════════════════════
+ // GET PROFILE TESTS
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Get Profile Tests")
+ class GetProfileTests {
+
+     @Test
+     @DisplayName("Should return profile successfully")
+     void getProfile_Success() {
+         when(userRepository.findByEmail(
+                 "john@example.com"))
+                 .thenReturn(Optional.of(mockUser));
+
+         UserResponse response =
+             authService.getProfile("john@example.com");
+
+         assertNotNull(response);
+         assertEquals("john@example.com",
+             response.getEmail());
+         assertEquals("John Doe",
+             response.getFullName());
+         assertEquals("EMPLOYEE", response.getRole());
+         assertEquals("ACTIVE", response.getStatus());
+     }
+
+     @Test
+     @DisplayName("Should throw when profile email not found")
+     void getProfile_NotFound() {
+         when(userRepository.findByEmail(
+                 "unknown@example.com"))
+                 .thenReturn(Optional.empty());
+
+         RuntimeException exception =
+             assertThrows(RuntimeException.class,
+                 () -> authService.getProfile(
+                     "unknown@example.com"));
+
+         assertTrue(exception.getMessage()
+             .contains("User not found"));
+     }
+ }
+
+ // ═══════════════════════════════════════════════
+ // MAP TO USER RESPONSE TESTS
+ // (Testing null-safe defaults in mapToUserResponse)
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Null Safety Tests")
+ class NullSafetyTests {
+
+     @Test
+     @DisplayName("Should handle null fields with defaults")
+     void getUserById_NullFields_DefaultsApplied() {
+         // User with null fields
+         User userWithNulls = User.builder()
+                 .id(5L)
+                 .email("test@example.com")
+                 .employeeCode(null)   // null
+                 .fullName(null)       // null
+                 .role(null)           // null
+                 .status(null)         // null
+                 .managerId(null)      // null
+                 .build();
+
+         when(userRepository.findById(5L))
+                 .thenReturn(Optional.of(userWithNulls));
+
+         UserResponse response =
+             authService.getUserById(5L);
+
+         // ✅ Verify defaults are applied
+         assertEquals("Code not assigned",
+             response.getEmployeeCode());
+         assertEquals("Full name not provided",
+             response.getFullName());
+         assertEquals("Role information unavailable",
+             response.getRole());
+         assertEquals("Status unconfirmed",
+             response.getStatus());
+         assertEquals(0L, response.getManagerId());
+     }
+
+     @Test
+     @DisplayName("Should return actual values when fields present")
+     void getUserById_AllFieldsPresent() {
+         when(userRepository.findById(1L))
+                 .thenReturn(Optional.of(mockUser));
+
+         UserResponse response =
+             authService.getUserById(1L);
+
+         assertEquals("EMP001",
+             response.getEmployeeCode());
+         assertEquals("John Doe",
+             response.getFullName());
+         assertEquals("EMPLOYEE", response.getRole());
+         assertEquals("ACTIVE", response.getStatus());
+         assertNotNull(response.getCreatedAt());
+     }
+ }
+
+ // ═══════════════════════════════════════════════
+ // EDGE CASE TESTS
+ // ═══════════════════════════════════════════════
+
+ @Nested
+ @DisplayName("Edge Case Tests")
+ class EdgeCaseTests {
+
+     @Test
+     @DisplayName("Signup should publish event after save")
+     void signup_PublishesEventAfterSave() {
+         when(userRepository.existsByEmail(anyString()))
+                 .thenReturn(false);
+         when(userRepository.existsByEmployeeCode(
+                 anyString()))
+                 .thenReturn(false);
+         when(passwordEncoder.encode(anyString()))
+                 .thenReturn("encoded");
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(mockUser);
+
+         authService.signup(signupRequest);
+
+         // ✅ Verify order: save first, then publish event
+         var inOrder = inOrder(
+             userRepository, eventPublisher);
+         inOrder.verify(userRepository)
+                .save(any(User.class));
+         inOrder.verify(eventPublisher)
+                .publishUserRegistered(any());
+     }
+
+     @Test
+     @DisplayName("Signup should return welcome message")
+     void signup_ReturnsWelcomeMessage() {
+         when(userRepository.existsByEmail(anyString()))
+                 .thenReturn(false);
+         when(userRepository.existsByEmployeeCode(
+                 anyString()))
+                 .thenReturn(false);
+         when(passwordEncoder.encode(anyString()))
+                 .thenReturn("encoded");
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(mockUser);
+
+         String result = authService.signup(signupRequest);
+
+         assertNotNull(result);
+         assertTrue(result.contains(
+             "Registration successful"));
+         assertTrue(result.contains("John Doe"));
+     }
+
+     @Test
+     @DisplayName("Login throws BadCredentialsException not RuntimeException")
+     void login_ThrowsCorrectExceptionType() {
+         when(authenticationManager.authenticate(any()))
+                 .thenThrow(new BadCredentialsException(
+                     "Bad credentials"));
+
+         // ✅ BadCredentialsException IS a RuntimeException
+         // but verify exact type
+         assertThrows(BadCredentialsException.class,
+             () -> authService.login(loginRequest));
+     }
+
+     @Test
+     @DisplayName("Change role publishes event with new role")
+     void changeRole_PublishesEventWithNewRole() {
+         User adminUser = User.builder()
+                 .id(1L)
+                 .email("admin@company.com")
+                 .role("ADMIN")
+                 .status("ACTIVE")
+                 .fullName("Admin")
+                 .employeeCode("ADM001")
+                 .build();
+
+         User employeeUser = User.builder()
+                 .id(2L)
+                 .email("john@example.com")
+                 .role("EMPLOYEE")
+                 .status("ACTIVE")
+                 .fullName("John Doe")
+                 .employeeCode("EMP001")
+                 .build();
+
+         ChangeRoleRequest request = new ChangeRoleRequest();
+         request.setRole("MANAGER");
+
+         when(userRepository.findByEmail(
+                 "admin@company.com"))
+                 .thenReturn(Optional.of(adminUser));
+         when(userRepository.findById(2L))
+                 .thenReturn(Optional.of(employeeUser));
+         when(userRepository.save(any(User.class)))
+                 .thenReturn(employeeUser);
+
+         authService.changeRole(
+             2L, request, "admin@company.com");
+
+         // Verify event published with correct role
+         verify(eventPublisher, times(1))
+             .publishUserRoleChanged(
+                 argThat(event ->
+                     event.getRole().equals("MANAGER") &&
+                     event.getEmail().equals(
+                         "john@example.com")));
+     }
+
+     @Test
+     @DisplayName("getAllUsers returns correct count")
+     void getAllUsers_ReturnsCorrectCount() {
+         List<User> users = List.of(
+             mockUser,
+             User.builder().id(2L)
+                 .email("a@a.com")
+                 .role("EMPLOYEE")
+                 .status("ACTIVE")
+                 .build(),
+             User.builder().id(3L)
+                 .email("b@b.com")
+                 .role("MANAGER")
+                 .status("ACTIVE")
+                 .build()
+         );
+
+         when(userRepository.findAll())
+                 .thenReturn(users);
+
+         List<UserResponse> result =
+             authService.getAllUsers();
+
+         assertEquals(3, result.size());
+     }
+ }
 
     // ═══════════════════════════════════════════════
     // GET ALL USERS TESTS

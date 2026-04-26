@@ -31,6 +31,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class User implements UserDetails {
 	
+	private static final String DEFAULT_STATUS = "ACTIVE";
+	
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -52,7 +54,7 @@ public class User implements UserDetails {
 	
 	@Column(nullable = false)
 	@Builder.Default
-	private String status = "ACTIVE";
+	private String status = DEFAULT_STATUS;
 	
 	@Column(name = "manager_id")
     private Long managerId;
@@ -98,8 +100,7 @@ public class User implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        // String comparison instead of enum comparison
-        return "ACTIVE".equals(this.status);
+        return DEFAULT_STATUS.equals(this.status);
     }
 
     @Override
@@ -109,6 +110,6 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return "ACTIVE".equals(this.status);
+        return DEFAULT_STATUS.equals(this.status);
     }
 }

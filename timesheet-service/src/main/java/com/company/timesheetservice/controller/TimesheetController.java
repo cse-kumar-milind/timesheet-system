@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.company.timesheetservice.dto.ProjectResponse;
@@ -115,4 +116,17 @@ public class TimesheetController {
 		
 		return ResponseEntity.ok(timesheetService.reviewTimesheet(timesheetId, managerId, request));
 	}
+
+    @Operation(summary = "Get submitted count", description = "[Internal] Fetch submitted count for compliance", hidden = true)
+    @GetMapping("/internal/compliance")
+    public ResponseEntity<Long> getSubmittedCount(
+            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart) {
+        return ResponseEntity.ok(timesheetService.getSubmittedCount(weekStart));
+    }
+
+    @Operation(summary = "Get timesheet count by status", description = "[Internal] Fetch count for dashboard", hidden = true)
+    @GetMapping("/internal/count")
+    public ResponseEntity<Long> getCountByStatus(@RequestParam String status) {
+        return ResponseEntity.ok(timesheetService.getCountByStatus(status));
+    }
 }

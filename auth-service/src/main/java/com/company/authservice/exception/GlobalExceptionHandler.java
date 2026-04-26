@@ -8,8 +8,6 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
-
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,13 +29,30 @@ public class GlobalExceptionHandler {
     }
 
     // 🔴 User Not Found
-    @ExceptionHandler(UsernameNotFoundException.class)
+    @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleUserNotFound(
-            UsernameNotFoundException ex,
+            UserNotFoundException ex,
             HttpServletRequest request) {
 
         return buildError(ex, request, HttpStatus.NOT_FOUND);
     }
+    
+    @ExceptionHandler(InvalidRoleChangeException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(
+            InvalidRoleChangeException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.BAD_REQUEST);
+    }
+    
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(
+            UserAlreadyExistsException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.BAD_REQUEST);
+    }
+    
 
     // 🔴 Access Denied
     @ExceptionHandler(AccessDeniedException.class)
@@ -62,7 +77,7 @@ public class GlobalExceptionHandler {
     }
 
     // 🔴 JWT Invalid
-    @ExceptionHandler(io.jsonwebtoken.SignatureException.class)
+    @ExceptionHandler(io.jsonwebtoken.security.SecurityException.class)
     public ResponseEntity<ErrorResponse> handleInvalidJwt(
             Exception ex,
             HttpServletRequest request) {
@@ -113,20 +128,29 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
+        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
-    
- // 🔧 Common builder method (reusable)
+
+
+    // 🔧 Common builder method (reusable)
     private ResponseEntity<ErrorResponse> buildError(
             Exception ex,
             HttpServletRequest request,
             HttpStatus status) {
+        return buildError(ex, request, status, null);
+    }
+
+    private ResponseEntity<ErrorResponse> buildError(
+            Exception ex,
+            HttpServletRequest request,
+            HttpStatus status,
+            String message) {
 
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
                 .error(status.getReasonPhrase())
-                .message(ex.getMessage())
+                .message(message != null ? message : ex.getMessage())
                 .path(request.getRequestURI())
                 .build();
 

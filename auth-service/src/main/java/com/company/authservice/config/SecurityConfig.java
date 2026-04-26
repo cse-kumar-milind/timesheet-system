@@ -30,14 +30,16 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(
-            HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http){
+    	
         http
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                     "/auth/signup",
                     "/auth/login",
+                    "/auth/users",
+                    "/auth/users/**",
                     "/auth/forgot-password",
                     "/auth/v3/api-docs",
                     "/auth/v3/api-docs/**",
@@ -48,7 +50,7 @@ public class SecurityConfig {
                     "/swagger-resources/**",
                     "/actuator/**"
                 ).permitAll()
-                // ✅ Everything else needs JWT
+                
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session
@@ -101,8 +103,7 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config)
-            throws Exception {
+            AuthenticationConfiguration config){
         return config.getAuthenticationManager();
     }
 }

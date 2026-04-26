@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.company.leaveservice.entity.Holiday;
+import java.util.Optional;
 
 @Repository
 public interface HolidayRepository extends JpaRepository<Holiday, Long>{
@@ -21,5 +22,8 @@ public interface HolidayRepository extends JpaRepository<Holiday, Long>{
 	boolean existsByHolidayDate(LocalDate holidayDate);
 	
 	List<Holiday> findByHolidayDateBetween(LocalDate fromDate, LocalDate toDate);
+	
+	// For "Employee Summary"
+	Optional<Holiday> findFirstByHolidayDateAfterOrderByHolidayDateAsc(LocalDate date);
 
 }

@@ -5,6 +5,8 @@ import com.company.leaveservice.dto.*;
 import com.company.leaveservice.entity.Holiday;
 import com.company.leaveservice.entity.LeaveBalance;
 import com.company.leaveservice.entity.LeaveRequest;
+import com.company.leaveservice.event.EventPublisher;
+import com.company.leaveservice.exception.InvalidOperationException;
 import com.company.leaveservice.repository.HolidayRepository;
 import com.company.leaveservice.repository.LeaveBalanceRepository;
 import com.company.leaveservice.repository.LeaveRequestRepository;
@@ -23,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,24 +33,19 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Leave Service Tests")
+@DisplayName("LeaveService Unit Tests")
 class LeaveServiceTest {
 
-    @Mock
-    private LeaveRequestRepository leaveRequestRepository;
-
-    @Mock
-    private LeaveBalanceRepository leaveBalanceRepository;
-
-    @Mock
-    private HolidayRepository holidayRepository;
-
-    @Mock
-    private AuthServiceClient authServiceClient;
+    @Mock private LeaveRequestRepository leaveRequestRepository;
+    @Mock private LeaveBalanceRepository leaveBalanceRepository;
+    @Mock private HolidayRepository holidayRepository;
+    @Mock private AuthServiceClient authServiceClient;
+    @Mock private EventPublisher eventPublisher;   // ✅ FIX: was missing in original
 
     @InjectMocks
     private LeaveService leaveService;
 
+    // ─── Shared Fixtures ───────────────────────────────────────
     private LeaveRequest mockLeaveRequest;
     private LeaveBalance mockLeaveBalance;
     private LeaveRequestDto leaveRequestDto;
@@ -55,6 +53,7 @@ class LeaveServiceTest {
 
     @BeforeEach
     void setUp() {
+        // April 1-2 2026 are Wednesday & Thursday (working days)
         mockLeaveRequest = LeaveRequest.builder()
                 .id(1L)
                 .userId(1L)
@@ -79,10 +78,8 @@ class LeaveServiceTest {
 
         leaveRequestDto = new LeaveRequestDto();
         leaveRequestDto.setLeaveType("CASUAL");
-        leaveRequestDto.setFromDate(
-            LocalDate.of(2026, 4, 1));
-        leaveRequestDto.setToDate(
-            LocalDate.of(2026, 4, 2));
+        leaveRequestDto.setFromDate(LocalDate.of(2026, 4, 1));
+        leaveRequestDto.setToDate(LocalDate.of(2026, 4, 2));
         leaveRequestDto.setReason("Personal work");
 
         mockUserResponse = UserResponse.builder()
@@ -92,375 +89,411 @@ class LeaveServiceTest {
                 .build();
     }
 
-    // ═══════════════════════════════════════════════
-    // APPLY LEAVE TESTS
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // APPLY LEAVE
+    // ═══════════════════════════════════════════════════════════
 
     @Nested
-    @DisplayName("Apply Leave Tests")
+    @DisplayName("applyLeave()")
     class ApplyLeaveTests {
 
         @Test
-        @DisplayName("Should apply leave successfully")
+        @DisplayName("Success — valid dates, balance available, no overlap")
         void applyLeave_Success() {
-            when(leaveRequestRepository
-                    .findOverlappingLeave(
-                            anyLong(), any(), any()))
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
                     .thenReturn(new ArrayList<>());
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(false);
-            when(leaveBalanceRepository
-                    .findByUserIdAndLeaveTypeAndYear(
-                            anyLong(), anyString(), anyInt()))
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
                     .thenReturn(Optional.of(mockLeaveBalance));
-            when(leaveRequestRepository.save(
-                    any(LeaveRequest.class)))
+            when(leaveRequestRepository.save(any(LeaveRequest.class)))
                     .thenReturn(mockLeaveRequest);
-            when(authServiceClient.getUserById(anyLong()))
-                    .thenReturn(mockUserResponse);
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+            doNothing().when(eventPublisher).publishLeaveApplied(any());
 
-            LeaveResponseDto response =
-                leaveService.applyLeave(1L, leaveRequestDto);
+            LeaveResponseDto response = leaveService.applyLeave(1L, leaveRequestDto);
 
             assertNotNull(response);
             assertEquals("SUBMITTED", response.getStatus());
             assertEquals("CASUAL", response.getLeaveType());
-            verify(leaveRequestRepository, times(1))
-                    .save(any(LeaveRequest.class));
+            assertEquals("John Doe", response.getEmployeeName());
+            verify(leaveRequestRepository).save(any(LeaveRequest.class));
+            verify(eventPublisher).publishLeaveApplied(any());
         }
 
         @Test
-        @DisplayName("Should throw when fromDate is after toDate")
-        void applyLeave_InvalidDateRange() {
-            leaveRequestDto.setFromDate(
-                LocalDate.of(2026, 4, 5));
-            leaveRequestDto.setToDate(
-                LocalDate.of(2026, 4, 1));
+        @DisplayName("Fail — fromDate is after toDate")
+        void applyLeave_FromDateAfterToDate() {
+            leaveRequestDto.setFromDate(LocalDate.of(2026, 4, 5));
+            leaveRequestDto.setToDate(LocalDate.of(2026, 4, 1));
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertEquals(
-                "From date cannot be after to date",
-                exception.getMessage());
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertEquals("From date cannot be after to date", ex.getMessage());
+            verifyNoInteractions(leaveRequestRepository);
         }
 
         @Test
-        @DisplayName("Should throw for past dates")
-        void applyLeave_PastDates() {
-            leaveRequestDto.setFromDate(
-                LocalDate.now().minusDays(5));
-            leaveRequestDto.setToDate(
-                LocalDate.now().minusDays(1));
+        @DisplayName("Fail — fromDate is in the past")
+        void applyLeave_PastDate() {
+            leaveRequestDto.setFromDate(LocalDate.now().minusDays(3));
+            leaveRequestDto.setToDate(LocalDate.now().minusDays(1));
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertEquals(
-                "Cannot apply leave for past dates",
-                exception.getMessage());
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertEquals("Cannot apply leave for past dates", ex.getMessage());
         }
 
         @Test
-        @DisplayName("Should throw when leave overlaps")
+        @DisplayName("Fail — overlapping leave request exists")
         void applyLeave_OverlappingLeave() {
-            when(leaveRequestRepository
-                    .findOverlappingLeave(
-                            anyLong(), any(), any()))
-                    .thenReturn(
-                        List.of(mockLeaveRequest));
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
+                    .thenReturn(List.of(mockLeaveRequest));
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertTrue(exception.getMessage()
-                .contains("overlap"));
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertTrue(ex.getMessage().contains("overlap"));
         }
 
         @Test
-        @DisplayName("Should throw when insufficient balance")
-        void applyLeave_InsufficientBalance() {
-            // Only 1 day remaining but requesting 2
-            mockLeaveBalance.setRemainingDays(1.0);
+        @DisplayName("Fail — all selected dates are weekends")
+        void applyLeave_WeekendDatesOnly() {
+            // April 4-5 2026 = Saturday & Sunday
+            leaveRequestDto.setFromDate(LocalDate.of(2026, 4, 4));
+            leaveRequestDto.setToDate(LocalDate.of(2026, 4, 5));
 
-            when(leaveRequestRepository
-                    .findOverlappingLeave(
-                            anyLong(), any(), any()))
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
                     .thenReturn(new ArrayList<>());
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(false);
-            when(leaveBalanceRepository
-                    .findByUserIdAndLeaveTypeAndYear(
-                            anyLong(), anyString(), anyInt()))
-                    .thenReturn(Optional.of(mockLeaveBalance));
+           // when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertTrue(exception.getMessage()
-                .contains("Insufficient leave balance"));
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertTrue(ex.getMessage().contains("no working days"));
         }
 
         @Test
-        @DisplayName("Should throw when no balance record found")
+        @DisplayName("Fail — all selected dates are holidays")
+        void applyLeave_HolidayDatesOnly() {
+            // April 1-2 are weekdays but marked as holidays
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
+                    .thenReturn(new ArrayList<>());
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(true);
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertTrue(ex.getMessage().contains("no working days"));
+        }
+
+        @Test
+        @DisplayName("Fail — no leave balance record found for type/year")
         void applyLeave_NoBalanceRecord() {
-            when(leaveRequestRepository
-                    .findOverlappingLeave(
-                            anyLong(), any(), any()))
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
                     .thenReturn(new ArrayList<>());
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(false);
-            when(leaveBalanceRepository
-                    .findByUserIdAndLeaveTypeAndYear(
-                            anyLong(), anyString(), anyInt()))
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
                     .thenReturn(Optional.empty());
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertTrue(exception.getMessage()
-                .contains("No leave balance found"));
+            RuntimeException ex = assertThrows(RuntimeException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertTrue(ex.getMessage().contains("No leave balance"));
         }
 
         @Test
-        @DisplayName("Should throw when all days are holidays/weekends")
-        void applyLeave_OnlyHolidaysSelected() {
-            // Select a weekend
-            leaveRequestDto.setFromDate(
-                LocalDate.of(2026, 4, 4)); // Saturday
-            leaveRequestDto.setToDate(
-                LocalDate.of(2026, 4, 5)); // Sunday
+        @DisplayName("Fail — insufficient leave balance")
+        void applyLeave_InsufficientBalance() {
+            mockLeaveBalance.setRemainingDays(0.5); // needs 2, has 0.5
 
-            when(leaveRequestRepository
-                    .findOverlappingLeave(
-                            anyLong(), any(), any()))
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
                     .thenReturn(new ArrayList<>());
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(false);
-
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.applyLeave(
-                        1L, leaveRequestDto));
-
-            assertTrue(exception.getMessage()
-                .contains("no working days"));
-        }
-    }
-
-    // ═══════════════════════════════════════════════
-    // REVIEW LEAVE TESTS
-    // ═══════════════════════════════════════════════
-
-    @Nested
-    @DisplayName("Review Leave Tests")
-    class ReviewLeaveTests {
-
-        private LeaveReviewDto approveRequest;
-        private LeaveReviewDto rejectRequest;
-
-        @BeforeEach
-        void setUp() {
-            approveRequest = new LeaveReviewDto();
-            approveRequest.setAction("APPROVED");
-            approveRequest.setComment("Approved!");
-
-            rejectRequest = new LeaveReviewDto();
-            rejectRequest.setAction("REJECTED");
-            rejectRequest.setComment("Not approved");
-        }
-
-        @Test
-        @DisplayName("Should approve leave and deduct balance")
-        void reviewLeave_Approve() {
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-            when(leaveRequestRepository.save(
-                    any(LeaveRequest.class)))
-                    .thenReturn(mockLeaveRequest);
-            when(leaveBalanceRepository
-                    .findByUserIdAndLeaveTypeAndYear(
-                            anyLong(), anyString(), anyInt()))
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
                     .thenReturn(Optional.of(mockLeaveBalance));
-            when(leaveBalanceRepository.save(
-                    any(LeaveBalance.class)))
-                    .thenReturn(mockLeaveBalance);
-            when(authServiceClient.getUserById(anyLong()))
-                    .thenReturn(mockUserResponse);
 
-            LeaveResponseDto response =
-                leaveService.reviewLeave(
-                    1L, 2L, approveRequest);
-
-            assertNotNull(response);
-            // Balance should be deducted
-            verify(leaveBalanceRepository, times(1))
-                    .save(any(LeaveBalance.class));
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.applyLeave(1L, leaveRequestDto));
+            assertTrue(ex.getMessage().contains("Insufficient leave balance"));
         }
 
         @Test
-        @DisplayName("Should reject without deducting balance")
-        void reviewLeave_Reject() {
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-            when(leaveRequestRepository.save(
-                    any(LeaveRequest.class)))
+        @DisplayName("Success — auth service down, response uses fallback name/email")
+        void applyLeave_AuthServiceDown_UsesFallback() {
+            when(leaveRequestRepository.findOverlappingLeave(anyLong(), any(), any()))
+                    .thenReturn(new ArrayList<>());
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
+                    .thenReturn(Optional.of(mockLeaveBalance));
+            when(leaveRequestRepository.save(any(LeaveRequest.class)))
                     .thenReturn(mockLeaveRequest);
-            when(authServiceClient.getUserById(anyLong()))
-                    .thenReturn(mockUserResponse);
+            // Auth service returns null for email (simulates fallback)
+            when(authServiceClient.getUserById(anyLong())).thenReturn(
+                    UserResponse.builder().id(1L).build());
+            doNothing().when(eventPublisher).publishLeaveApplied(any());
 
-            leaveService.reviewLeave(1L, 2L, rejectRequest);
+            LeaveResponseDto response = leaveService.applyLeave(1L, leaveRequestDto);
 
-            // Balance should NOT be deducted on rejection
-            verify(leaveBalanceRepository, never())
-                    .save(any(LeaveBalance.class));
-        }
-
-        @Test
-        @DisplayName("Should throw when rejecting without comment")
-        void reviewLeave_RejectWithoutComment() {
-            rejectRequest.setComment(null);
-
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.reviewLeave(
-                        1L, 2L, rejectRequest));
-
-            assertEquals(
-                "Comment is mandatory when rejecting",
-                exception.getMessage());
-        }
-
-        @Test
-        @DisplayName("Should throw when leave is not submitted")
-        void reviewLeave_NotSubmitted() {
-            mockLeaveRequest.setStatus("APPROVED");
-
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> leaveService.reviewLeave(
-                        1L, 2L, approveRequest));
-
-            assertTrue(exception.getMessage()
-                .contains("Only SUBMITTED"));
+            assertEquals("Name information not found", response.getEmployeeName());
+            assertEquals("Email information not found", response.getEmployeeEmail());
         }
     }
 
-    // ═══════════════════════════════════════════════
-    // CANCEL LEAVE TESTS
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // CANCEL LEAVE
+    // ═══════════════════════════════════════════════════════════
 
     @Nested
-    @DisplayName("Cancel Leave Tests")
+    @DisplayName("cancelLeave()")
     class CancelLeaveTests {
 
         @Test
-        @DisplayName("Should cancel leave successfully")
+        @DisplayName("Success — submitted leave cancelled by owner")
         void cancelLeave_Success() {
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-            when(leaveRequestRepository.save(
-                    any(LeaveRequest.class)))
-                    .thenReturn(mockLeaveRequest);
-            when(authServiceClient.getUserById(anyLong()))
-                    .thenReturn(mockUserResponse);
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+            when(leaveRequestRepository.save(any())).thenReturn(mockLeaveRequest);
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
 
-            LeaveResponseDto response =
-                leaveService.cancelLeave(1L, 1L);
+            LeaveResponseDto response = leaveService.cancelLeave(1L, 1L);
 
             assertNotNull(response);
-            verify(leaveRequestRepository, times(1))
-                    .save(any(LeaveRequest.class));
+            verify(leaveRequestRepository).save(argThat(lr -> "CANCELLED".equals(lr.getStatus())));
         }
 
         @Test
-        @DisplayName("Should throw when user tries to cancel another's leave")
+        @DisplayName("Fail — leave not found")
+        void cancelLeave_NotFound() {
+            when(leaveRequestRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThrows(RuntimeException.class, () -> leaveService.cancelLeave(1L, 99L));
+        }
+
+        @Test
+        @DisplayName("Fail — user tries to cancel someone else's leave")
         void cancelLeave_NotOwner() {
-            // Leave belongs to userId=1
-            // But userId=2 trying to cancel
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
-                    () -> {
-                        when(leaveRequestRepository
-                                .findById(1L))
-                                .thenReturn(Optional.of(
-                                    mockLeaveRequest));
-                        leaveService.cancelLeave(2L, 1L);
-                    });
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.cancelLeave(2L, 1L)); // userId=2, owner=1
+            assertEquals("You can only cancel your own leave", ex.getMessage());
         }
 
         @Test
-        @DisplayName("Should throw when cancelling already cancelled leave")
+        @DisplayName("Fail — cannot cancel already CANCELLED leave")
         void cancelLeave_AlreadyCancelled() {
             mockLeaveRequest.setStatus("CANCELLED");
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
 
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
                     () -> leaveService.cancelLeave(1L, 1L));
-
-            assertTrue(exception.getMessage()
-                .contains("Cannot cancel a CANCELLED"));
+            assertTrue(ex.getMessage().contains("Cannot cancel a CANCELLED"));
         }
 
         @Test
-        @DisplayName("Should throw when cancelling past approved leave")
+        @DisplayName("Fail — cannot cancel already REJECTED leave")
+        void cancelLeave_AlreadyRejected() {
+            mockLeaveRequest.setStatus("REJECTED");
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.cancelLeave(1L, 1L));
+            assertTrue(ex.getMessage().contains("Cannot cancel a REJECTED"));
+        }
+
+        @Test
+        @DisplayName("Fail — cannot cancel APPROVED leave that has already started")
         void cancelLeave_PastApprovedLeave() {
             mockLeaveRequest.setStatus("APPROVED");
-            mockLeaveRequest.setFromDate(
-                LocalDate.now().minusDays(5));
+            mockLeaveRequest.setFromDate(LocalDate.now().minusDays(2));
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
 
-            when(leaveRequestRepository.findById(1L))
-                    .thenReturn(
-                        Optional.of(mockLeaveRequest));
-
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
                     () -> leaveService.cancelLeave(1L, 1L));
+            assertTrue(ex.getMessage().contains("already started"));
+        }
 
-            assertTrue(exception.getMessage()
-                .contains("already started"));
+        @Test
+        @DisplayName("Success — APPROVED leave cancelled before start date")
+        void cancelLeave_ApprovedBeforeStart() {
+            mockLeaveRequest.setStatus("APPROVED");
+            mockLeaveRequest.setFromDate(LocalDate.now().plusDays(3)); // future
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+            when(leaveRequestRepository.save(any())).thenReturn(mockLeaveRequest);
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+
+            assertDoesNotThrow(() -> leaveService.cancelLeave(1L, 1L));
+            verify(leaveRequestRepository).save(argThat(lr -> "CANCELLED".equals(lr.getStatus())));
         }
     }
 
-    // ═══════════════════════════════════════════════
-    // HOLIDAY TESTS
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // REVIEW LEAVE
+    // ═══════════════════════════════════════════════════════════
 
     @Nested
-    @DisplayName("Holiday Tests")
+    @DisplayName("reviewLeave()")
+    class ReviewLeaveTests {
+
+        private LeaveReviewDto approveDto;
+        private LeaveReviewDto rejectDto;
+
+        @BeforeEach
+        void setUp() {
+            approveDto = new LeaveReviewDto();
+            approveDto.setAction("APPROVED");
+            approveDto.setComment("Looks good");
+
+            rejectDto = new LeaveReviewDto();
+            rejectDto.setAction("REJECTED");
+            rejectDto.setComment("Not enough reason");
+        }
+
+        @Test
+        @DisplayName("Success — approve leave and deduct balance")
+        void reviewLeave_Approve() {
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+            when(leaveRequestRepository.save(any())).thenReturn(mockLeaveRequest);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
+                    .thenReturn(Optional.of(mockLeaveBalance));
+            when(leaveBalanceRepository.save(any())).thenReturn(mockLeaveBalance);
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+
+            leaveService.reviewLeave(1L, 2L, approveDto);
+
+            verify(leaveBalanceRepository).save(argThat(b ->
+                    b.getUsedDays() == 2.0 && b.getRemainingDays() == 10.0));
+        }
+
+        @Test
+        @DisplayName("Success — reject leave, balance NOT deducted")
+        void reviewLeave_Reject() {
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+            when(leaveRequestRepository.save(any())).thenReturn(mockLeaveRequest);
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+
+            leaveService.reviewLeave(1L, 2L, rejectDto);
+
+            verify(leaveBalanceRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Fail — leave not found")
+        void reviewLeave_NotFound() {
+            when(leaveRequestRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThrows(RuntimeException.class, () -> leaveService.reviewLeave(99L, 2L, approveDto));
+        }
+
+        @Test
+        @DisplayName("Fail — leave status is not SUBMITTED")
+        void reviewLeave_NotSubmitted() {
+            mockLeaveRequest.setStatus("APPROVED");
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.reviewLeave(1L, 2L, approveDto));
+            assertTrue(ex.getMessage().contains("Only SUBMITTED"));
+        }
+
+        @Test
+        @DisplayName("Fail — reject without providing a comment")
+        void reviewLeave_RejectWithoutComment() {
+            rejectDto.setComment(null);
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.reviewLeave(1L, 2L, rejectDto));
+            assertEquals("Comment is mandatory when rejecting", ex.getMessage());
+        }
+
+        @Test
+        @DisplayName("Fail — reject with blank comment")
+        void reviewLeave_RejectWithBlankComment() {
+            rejectDto.setComment("   ");
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                    () -> leaveService.reviewLeave(1L, 2L, rejectDto));
+            assertEquals("Comment is mandatory when rejecting", ex.getMessage());
+        }
+
+        @Test
+        @DisplayName("Fail — balance record missing on approval")
+        void reviewLeave_BalanceMissingOnApproval() {
+            when(leaveRequestRepository.findById(1L)).thenReturn(Optional.of(mockLeaveRequest));
+            when(leaveRequestRepository.save(any())).thenReturn(mockLeaveRequest);
+            when(leaveBalanceRepository.findByUserIdAndLeaveTypeAndYear(anyLong(), anyString(), anyInt()))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(RuntimeException.class, () -> leaveService.reviewLeave(1L, 2L, approveDto));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // LEAVE HISTORY & BALANCE
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("getMyLeaveHistory() & getMyBalances()")
+    class QueryTests {
+
+        @Test
+        @DisplayName("getMyLeaveHistory — returns mapped DTOs")
+        void getMyLeaveHistory_ReturnsList() {
+            when(leaveRequestRepository.findByUserIdOrderByCreatedAtDesc(1L))
+                    .thenReturn(List.of(mockLeaveRequest));
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+
+            List<LeaveResponseDto> result = leaveService.getMyLeaveHistory(1L);
+
+            assertEquals(1, result.size());
+            assertEquals(1L, result.get(0).getUserId());
+        }
+
+        @Test
+        @DisplayName("getMyLeaveHistory — returns empty list when no requests")
+        void getMyLeaveHistory_Empty() {
+            when(leaveRequestRepository.findByUserIdOrderByCreatedAtDesc(1L))
+                    .thenReturn(List.of());
+
+            List<LeaveResponseDto> result = leaveService.getMyLeaveHistory(1L);
+
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("getMyBalances — returns balance DTOs for current year")
+        void getMyBalances_ReturnsList() {
+            when(leaveBalanceRepository.findByUserIdAndYear(eq(1L), anyInt()))
+                    .thenReturn(List.of(mockLeaveBalance));
+
+            List<LeaveBalanceDto> result = leaveService.getMyBalances(1L);
+
+            assertEquals(1, result.size());
+            assertEquals("CASUAL", result.get(0).getLeaveType());
+            assertEquals(12.0, result.get(0).getTotalDays());
+        }
+
+        @Test
+        @DisplayName("getPendingRequests — returns only SUBMITTED leaves")
+        void getPendingRequests_ReturnsSubmitted() {
+            when(leaveRequestRepository.findByStatus("SUBMITTED"))
+                    .thenReturn(List.of(mockLeaveRequest));
+            when(authServiceClient.getUserById(anyLong())).thenReturn(mockUserResponse);
+
+            List<LeaveResponseDto> result = leaveService.getPendingRequests();
+
+            assertEquals(1, result.size());
+            assertEquals("SUBMITTED", result.get(0).getStatus());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // HOLIDAYS
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Holiday Operations")
     class HolidayTests {
 
         @Test
-        @DisplayName("Should add holiday successfully")
+        @DisplayName("addHoliday — success")
         void addHoliday_Success() {
             HolidayDto dto = new HolidayDto();
             dto.setHolidayDate(LocalDate.of(2026, 8, 15));
@@ -474,36 +507,152 @@ class LeaveServiceTest {
                     .holidayType("NATIONAL")
                     .build();
 
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(false);
-            when(holidayRepository.save(any(Holiday.class)))
-                    .thenReturn(holiday);
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(false);
+            when(holidayRepository.save(any())).thenReturn(holiday);
 
             Holiday result = leaveService.addHoliday(dto);
 
             assertNotNull(result);
-            assertEquals("Independence Day",
-                result.getHolidayName());
+            assertEquals("Independence Day", result.getHolidayName());
+            assertEquals("NATIONAL", result.getHolidayType());
         }
 
         @Test
-        @DisplayName("Should throw when holiday date already exists")
+        @DisplayName("addHoliday — fails for duplicate date")
         void addHoliday_DuplicateDate() {
             HolidayDto dto = new HolidayDto();
             dto.setHolidayDate(LocalDate.of(2026, 8, 15));
             dto.setHolidayName("Independence Day");
 
-            when(holidayRepository.existsByHolidayDate(
-                    any()))
-                    .thenReturn(true);
+            when(holidayRepository.existsByHolidayDate(any())).thenReturn(true);
 
-            RuntimeException exception =
-                assertThrows(RuntimeException.class,
+            InvalidOperationException ex = assertThrows(InvalidOperationException.class,
                     () -> leaveService.addHoliday(dto));
+            assertTrue(ex.getMessage().contains("Holiday already exists"));
+        }
 
-            assertTrue(exception.getMessage()
-                .contains("Holiday already exists"));
+        @Test
+        @DisplayName("getHolidays — returns holidays for given year")
+        void getHolidays_ReturnsForYear() {
+            Holiday h = Holiday.builder().id(1L)
+                    .holidayDate(LocalDate.of(2026, 1, 26))
+                    .holidayName("Republic Day").build();
+            when(holidayRepository.findByYear(2026)).thenReturn(List.of(h));
+
+            List<Holiday> result = leaveService.getHolidays(2026);
+
+            assertEquals(1, result.size());
+            assertEquals("Republic Day", result.get(0).getHolidayName());
+        }
+
+        @Test
+        @DisplayName("getNextHoliday — returns name and date")
+        void getNextHoliday_Found() {
+            Holiday upcoming = Holiday.builder()
+                    .holidayName("Diwali")
+                    .holidayDate(LocalDate.of(2026, 10, 20))
+                    .build();
+            when(holidayRepository.findFirstByHolidayDateAfterOrderByHolidayDateAsc(any()))
+                    .thenReturn(Optional.of(upcoming));
+
+            String result = leaveService.getNextHoliday();
+
+            assertTrue(result.contains("Diwali"));
+            assertTrue(result.contains("2026-10-20"));
+        }
+
+        @Test
+        @DisplayName("getNextHoliday — returns fallback when none upcoming")
+        void getNextHoliday_None() {
+            when(holidayRepository.findFirstByHolidayDateAfterOrderByHolidayDateAsc(any()))
+                    .thenReturn(Optional.empty());
+
+            assertEquals("No upcoming holidays", leaveService.getNextHoliday());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // INITIALIZE LEAVE BALANCES (RabbitMQ onboarding)
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("initializeLeaveBalances()")
+    class InitializeBalancesTests {
+
+        @Test
+        @DisplayName("Success — creates 4 default balances for new user")
+        void initialize_CreatesDefaultBalances() {
+            when(leaveBalanceRepository.findByUserIdAndYear(eq(1L), anyInt()))
+                    .thenReturn(List.of());
+            when(leaveBalanceRepository.saveAll(anyList())).thenReturn(List.of());
+
+            leaveService.initializeLeaveBalances(1L);
+
+            verify(leaveBalanceRepository).saveAll(argThat(list ->
+                    ((List<?>) list).size() == 4));
+        }
+
+        @Test
+        @DisplayName("Idempotent — skips if balances already exist")
+        void initialize_Idempotent() {
+            when(leaveBalanceRepository.findByUserIdAndYear(eq(1L), anyInt()))
+                    .thenReturn(List.of(mockLeaveBalance));
+
+            leaveService.initializeLeaveBalances(1L);
+
+            verify(leaveBalanceRepository, never()).saveAll(anyList());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SOFT DELETE (User deleted event)
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("softDeleteUserData()")
+    class SoftDeleteTests {
+
+        @Test
+        @DisplayName("Calls cancel, soft-delete requests, and soft-delete balances")
+        void softDelete_CallsAllThreeOperations() {
+            leaveService.softDeleteUserData(1L);
+
+            verify(leaveRequestRepository).cancelPendingLeaves(1L);
+            verify(leaveRequestRepository).softDeleteUserRequests(1L);
+            verify(leaveBalanceRepository).softDeleteUserBalances(1L);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CONSUMPTION STATS
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("getConsumptionStats()")
+    class ConsumptionStatsTests {
+
+        @Test
+        @DisplayName("Returns mapped type-to-count stats")
+        void getConsumptionStats_ReturnsMappedData() {
+            List<Object[]> raw = List.of(
+                    new Object[]{"CASUAL", 5L},
+                    new Object[]{"SICK", 3L}
+            );
+            when(leaveRequestRepository.countApprovedByType()).thenReturn(raw);
+
+            Map<String, Long> stats = leaveService.getConsumptionStats();
+
+            assertEquals(2, stats.size());
+            assertEquals(5L, stats.get("CASUAL"));
+            assertEquals(3L, stats.get("SICK"));
+        }
+
+        @Test
+        @DisplayName("getCountByStatus — delegates to repository")
+        void getCountByStatus_DelegatesToRepo() {
+            when(leaveRequestRepository.countByStatus("SUBMITTED")).thenReturn(7L);
+
+            assertEquals(7L, leaveService.getCountByStatus("SUBMITTED"));
         }
     }
 }

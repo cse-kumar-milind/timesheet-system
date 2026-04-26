@@ -9,8 +9,6 @@ import com.company.timesheetservice.dto.UserResponse;
 @FeignClient(name = "auth-service", fallback = AuthServiceClientFallback.class)
 public interface AuthServiceClient {
 	
-	// ✅ Calls GET http://auth-service/auth/users/{id}
-    // Feign handles URL construction automatically via Eureka
     @GetMapping("/auth/users/{id}")
     UserResponse getUserById(@PathVariable("id") Long id);
 

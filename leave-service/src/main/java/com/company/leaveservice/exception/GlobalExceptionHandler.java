@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
         return buildError(
                 ex,
                 request,
-                HttpStatus.UNAUTHORIZED
+                HttpStatus.UNAUTHORIZED,"Invalid username or password"
         );
     }
 
@@ -36,7 +36,15 @@ public class GlobalExceptionHandler {
             UsernameNotFoundException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.NOT_FOUND);
+        return buildError(ex, request, HttpStatus.NOT_FOUND,null);
+    }
+    
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(
+    		InvalidOperationException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.BAD_REQUEST,null);
     }
 
     // 🔴 Access Denied
@@ -45,7 +53,7 @@ public class GlobalExceptionHandler {
             AccessDeniedException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.FORBIDDEN);
+        return buildError(ex, request, HttpStatus.FORBIDDEN, "Access Denied");
     }
 
     // 🔴 Validation Errors (@Valid)
@@ -78,7 +86,7 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.BAD_REQUEST);
+        return buildError(ex, request, HttpStatus.BAD_REQUEST,null);
     }
 
     // 🔴 Catch-All Exception
@@ -87,20 +95,34 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request) {
 
-        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
+        return buildError(ex, request, HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
-    
- // 🔧 Common builder method (reusable)
+
+    // 🔴 Feign Client Exception (Inter-service calls)
+    @ExceptionHandler(feign.FeignException.class)
+    public ResponseEntity<ErrorResponse> handleFeignException(
+            feign.FeignException ex,
+            HttpServletRequest request) {
+
+        HttpStatus status = HttpStatus.resolve(ex.status()) != null 
+                ? HttpStatus.valueOf(ex.status()) 
+                : HttpStatus.INTERNAL_SERVER_ERROR;
+
+        return buildError(ex, request, status, "Downstream Service Error: " + ex.contentUTF8());
+    }
+
+    // 🔧 Common builder method (reusable)
     private ResponseEntity<ErrorResponse> buildError(
             Exception ex,
             HttpServletRequest request,
-            HttpStatus status) {
+            HttpStatus status,
+            String message) {
 
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
                 .error(status.getReasonPhrase())
-                .message(ex.getMessage())
+                .message(message != null ? message : ex.getMessage())
                 .path(request.getRequestURI())
                 .build();
 

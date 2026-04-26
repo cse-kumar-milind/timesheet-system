@@ -21,6 +21,8 @@ spring:
           starttls:
             enable: true
 
+mail.from: ${MAIL_FROM:noreply@timesheet.com}
+
 eureka:
   client:
     service-url:
@@ -32,6 +34,6 @@ management:
   tracing:
     sampling:
       probability: 1.0
-  zipkin:
-    tracing:
-      endpoint: ${MANAGEMENT_ZIPKIN_TRACING_ENDPOINT:http://localhost:9411/api/v2/spans}
+    export:
+      zipkin:
+        endpoint: ${MANAGEMENT_ZIPKIN_TRACING_ENDPOINT:http://localhost:9411/api/v2/spans}

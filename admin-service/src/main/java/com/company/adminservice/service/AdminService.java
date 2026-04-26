@@ -5,6 +5,8 @@ import com.company.adminservice.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -20,32 +22,102 @@ public class AdminService {
 
     public DashboardResponse getDashboard(String role) {
 
-        // Fetch data from all services
-        List<TimesheetResponse> pendingTimesheets =
-                timesheetServiceClient
-                        .getPendingTimesheets(role);
+        // Fetch pending items for the "Recent" section
+        List<TimesheetResponse> pendingTimesheetList =
+                timesheetServiceClient.getPendingTimesheets(role);
 
-        List<LeaveResponseDto> pendingLeaves =
-                leaveServiceClient
-                        .getPendingLeaves(role);
+        List<LeaveResponseDto> pendingLeaveList =
+                leaveServiceClient.getPendingLeaves(role);
 
-        List<UserResponse> allUsers =
-                authServiceClient.getAllUsers();
+        // Fetch all users for the "Employees" section
+        List<UserResponse> allUsers = authServiceClient.getAllUsers();
 
-        // Build dashboard response
+        // Fetch real counts for the stats tiles
+        long pendingTS = timesheetServiceClient.getCountByStatus("SUBMITTED");
+        long approvedTS = timesheetServiceClient.getCountByStatus("APPROVED");
+        long rejectedTS = timesheetServiceClient.getCountByStatus("REJECTED");
+
+        long pendingLV = leaveServiceClient.getCountByStatus("SUBMITTED");
+        long approvedLV = leaveServiceClient.getCountByStatus("APPROVED");
+        long rejectedLV = leaveServiceClient.getCountByStatus("REJECTED");
+
         return DashboardResponse.builder()
-                .pendingTimesheets(
-                        pendingTimesheets.size())
-                .approvedTimesheets(0L) // extend later
-                .rejectedTimesheets(0L) // extend later
-                .pendingLeaves(
-                        pendingLeaves.size())
-                .approvedLeaves(0L)     // extend later
-                .rejectedLeaves(0L)     // extend later
-                .recentTimesheets(pendingTimesheets)
-                .recentLeaves(pendingLeaves)
+                .pendingTimesheets(pendingTS)
+                .approvedTimesheets(approvedTS)
+                .rejectedTimesheets(rejectedTS)
+                .pendingLeaves(pendingLV)
+                .approvedLeaves(approvedLV)
+                .rejectedLeaves(rejectedLV)
+                .recentTimesheets(pendingTimesheetList)
+                .recentLeaves(pendingLeaveList)
                 .allEmployees(allUsers)
                 .build();
+    }
+
+    public Map<String, Object> getEmployeeSummary(String email) {
+        // In a real app, we'd fetch specific stats for this user
+        String nextHoliday = leaveServiceClient.getNextHoliday();
+        
+        return Map.of(
+            "pendingActions", 2, // Example: 1 missing timesheet, 1 pending review
+            "nextHoliday", nextHoliday,
+            "message", "Summary for " + email + " retrieved successfully"
+        );
+    }
+
+    // ─── Config & Policies ─────────────────────────────
+
+    public Map<String, Object> getPublicConfig() {
+        return Map.of(
+            "status", "System Online",
+            "announcements", List.of(
+                "System maintenance scheduled for Sunday at 2 AM.",
+                "Fiscal year-end timesheets due by Friday."
+            ),
+            "supportContact", "support@company.com"
+        );
+    }
+
+    public Map<String, Object> getPolicies() {
+        return Map.of(
+            "leavePolicy", "Employees accrue 1.5 days per month.",
+            "timesheetPolicy", "Timesheets must be submitted by Monday 10 AM.",
+            "lastUpdated", "2024-01-01"
+        );
+    }
+
+    // ─── Reports ────────────────────────────────────────
+
+    public Map<String, Object> getTimesheetCompliance() {
+        LocalDate currentWeek = LocalDate.now().with(DayOfWeek.MONDAY);
+        long activeEmployees = authServiceClient.getAllUsers().size();
+        long submittedCount = timesheetServiceClient.getSubmittedCount(currentWeek);
+
+        double complianceRate = activeEmployees > 0 
+            ? (double) submittedCount / activeEmployees * 100 
+            : 0;
+
+        return Map.of(
+            "reportName", "Timesheet Compliance",
+            "weekStart", currentWeek.toString(),
+            "totalEmployees", activeEmployees,
+            "submittedTimesheets", submittedCount,
+            "compliancePercentage", String.format("%.2f%%", complianceRate)
+        );
+    }
+
+    public Map<String, Object> getLeaveConsumption() {
+        Map<String, Long> consumption = leaveServiceClient.getConsumptionStats();
+        
+        return Map.of(
+            "reportName", "Leave Consumption",
+            "consumptionByType", consumption,
+            "totalApprovedLeaves", consumption.values().stream().mapToLong(Long::longValue).sum()
+        );
+    }
+
+    public Object addHoliday(String role, HolidayDto holiday) {
+        return leaveServiceClient.addHoliday(role, holiday);
     }
 
     // ─── Users ─────────────────────────────────────────
@@ -54,27 +126,11 @@ public class AdminService {
         return authServiceClient.getAllUsers();
     }
 
-    public String deleteUserByEmail(String email) {
-        return authServiceClient.deleteUserByEmail(email);
+    public String deleteUserById(Long id) {
+        return authServiceClient.deleteUserById(id);
     }
 
     public UserResponse getUserById(Long id) {
         return authServiceClient.getUserById(id);
-    }
-
-    // ─── Timesheets ────────────────────────────────────
-
-    public List<TimesheetResponse> getPendingTimesheets(
-            String role) {
-        return timesheetServiceClient
-                .getPendingTimesheets(role);
-    }
-
-    // ─── Leaves ────────────────────────────────────────
-
-    public List<LeaveResponseDto> getPendingLeaves(
-            String role) {
-        return leaveServiceClient
-                .getPendingLeaves(role);
     }
 }

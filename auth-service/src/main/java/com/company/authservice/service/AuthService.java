@@ -2,9 +2,8 @@
 package com.company.authservice.service;
 
 import java.util.List;
-import java.util.stream.Collectors;
-
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,12 +19,18 @@ import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
 import com.company.authservice.event.EventPublisher;
 import com.company.authservice.event.UserRegisteredEvent;
+import com.company.authservice.exception.InvalidRoleChangeException;
+import com.company.authservice.exception.UserAlreadyExistsException;
+import com.company.authservice.exception.UserNotFoundException;
+import com.company.authservice.event.UserDeletedEvent;
 import com.company.authservice.model.User;
 import com.company.authservice.repository.UserRepository;
 import com.company.authservice.security.JwtService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -36,15 +41,17 @@ public class AuthService {
 	private final AuthenticationManager authenticationManager;
 	private final EventPublisher eventPublisher;
 	
+	private static final String USER_NOT_FOUND = "User not found with id: ";
+	
 	public String signup(SignupRequest request) {
 		
 		if(userRepository.existsByEmail(request.getEmail())) {
-			throw new RuntimeException(
+			throw new UserAlreadyExistsException(
 					"Email already registered: "+request.getEmail());
 		}
 		
 		if(userRepository.existsByEmployeeCode(request.getEmployeeCode())) {
-			throw new RuntimeException(
+			throw new UserAlreadyExistsException(
 					"Employee code already exists: "+request.getEmployeeCode());
 		}
 		
@@ -81,13 +88,13 @@ public class AuthService {
 							request.getPassword()));
 		}
 		catch (AuthenticationException e) {
-			throw new RuntimeException(
+			throw new BadCredentialsException(
 					"Invalid email or password");
 		}
 		
 		 User user = userRepository.findByEmail(request.getEmail())
 				 .orElseThrow(() -> 
-				 new RuntimeException("User not found"));
+				 new UserNotFoundException("User not found"));
 		 
 		 String token = jwtService.generateToken(user);
 		 
@@ -107,14 +114,14 @@ public class AuthService {
     	
     	User user = userRepository
                 .findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new UserNotFoundException(
                         "No account found with email: "
                         + request.getEmail()));
     	
         // Check passwords match
         if (!request.getNewPassword()
                     .equals(request.getConfirmPassword())) {
-            throw new RuntimeException(
+            throw new BadCredentialsException(
                 "Passwords do not match");
         }
 
@@ -128,17 +135,28 @@ public class AuthService {
     public UserResponse getProfile(String email) {
         User user = userRepository
                 .findByEmail(email)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new UserNotFoundException(
                         "User not found"));
         return mapToUserResponse(user);
     }
 
     @Transactional
-    public void deleteUserByEmail(String email) {
-        if (!userRepository.existsByEmail(email)) {
-            throw new RuntimeException("User not found with email: " + email);
-        }
-        userRepository.deleteByEmail(email);
+    public void deleteUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(USER_NOT_FOUND + id));
+        
+        // Soft delete
+        user.setStatus("DELETED");
+        user.setEmail("deleted_" + id + "@company.com");
+        user.setPassword(""); // wipe password
+        userRepository.save(user);
+
+        eventPublisher.publishUserDeleted(
+            UserDeletedEvent.builder()
+                .userId(id)
+                .email(user.getEmail())
+                .build()
+        );
     }
     
     public UserResponse updateManager(
@@ -148,12 +166,12 @@ public class AuthService {
 
         User user = userRepository
                 .findById(userId)
-                .orElseThrow(() -> new RuntimeException(
-                        "User not found with id: "+userId));
+                .orElseThrow(() -> new UserNotFoundException(
+                		USER_NOT_FOUND + userId));
         
         if (user.getEmail()
                 .equals(email)) {
-        	throw new RuntimeException(
+        	throw new InvalidRoleChangeException(
           "Admin cannot set their own manager");
         }
         
@@ -171,16 +189,22 @@ public class AuthService {
             ChangeRoleRequest request,
             String requestedByEmail) {
 
+        User requester = userRepository.findByEmail(requestedByEmail)
+                .orElseThrow(() -> new UserNotFoundException("Requester not found"));
+        if (!"ADMIN".equals(requester.getRole())) {
+            throw new InvalidRoleChangeException("Only ADMIN can change roles");
+        }
+
         // ✅ Find target user
         User targetUser = userRepository
                 .findById(userId)
-                .orElseThrow(() -> new RuntimeException(
-                        "User not found with id: " + userId));
+                .orElseThrow(() -> new UserNotFoundException(
+                		USER_NOT_FOUND + userId));
 
         // Prevent admin from changing their own role
         if (targetUser.getEmail()
                       .equals(requestedByEmail)) {
-            throw new RuntimeException(
+            throw new InvalidRoleChangeException(
                 "Admin cannot change their own role");
         }
 
@@ -196,7 +220,7 @@ public class AuthService {
 		        .role(targetUser.getRole())
 		        .build());
 
-        System.out.println("Role changed: "
+		log.debug("Role changed: "
             + targetUser.getEmail()
             + " from " + oldRole
             + " to " + request.getRole()
@@ -207,13 +231,19 @@ public class AuthService {
     
     public UserResponse changeStatus(Long userId, ChangeStatusRequest request, String requestedByEmail) {
     	
+        User requester = userRepository.findByEmail(requestedByEmail)
+                .orElseThrow(() -> new UserNotFoundException("Requester not found"));
+        if (!"ADMIN".equals(requester.getRole())) {
+            throw new InvalidRoleChangeException("Only ADMIN can change status");
+        }
+
     	User user = userRepository.findById(userId)
-    				.orElseThrow(() -> new RuntimeException("User not found with id: "+userId));
+    				.orElseThrow(() -> new UserNotFoundException(USER_NOT_FOUND +userId));
     	
     	// Prevent admin from changing their own status
         if (user.getEmail()
                       .equals(requestedByEmail)) {
-            throw new RuntimeException(
+            throw new InvalidRoleChangeException(
                 "Admin cannot change their own status");
         }
         
@@ -228,8 +258,7 @@ public class AuthService {
 
 	public UserResponse getUserById(Long id) {
 	    User user = userRepository.findById(id)
-	            .orElseThrow(() -> new RuntimeException(
-	                    "User not found with id: " + id));
+	            .orElseThrow(() -> new UserNotFoundException(USER_NOT_FOUND + id));
 	    return mapToUserResponse(user);
 	}
 
@@ -237,18 +266,18 @@ public class AuthService {
 	    return userRepository.findAll()
 	            .stream()
 	            .map(this::mapToUserResponse)
-	            .collect(Collectors.toList());
+	            .toList();
 	}
 
 	private UserResponse mapToUserResponse(User user) {
 	    return UserResponse.builder()
 	            .id(user.getId())
-	            .employeeCode(user.getEmployeeCode())
-	            .fullName(user.getFullName())
+	            .employeeCode(user.getEmployeeCode() != null ? user.getEmployeeCode() : "Code not assigned")
+	            .fullName(user.getFullName() != null ? user.getFullName() : "Full name not provided")
 	            .email(user.getEmail())
-	            .role(user.getRole())
-	            .status(user.getStatus())
-	            .managerId(user.getManagerId())
+	            .role(user.getRole() != null ? user.getRole() : "Role information unavailable")
+	            .status(user.getStatus() != null ? user.getStatus() : "Status unconfirmed")
+	            .managerId(user.getManagerId() != null ? user.getManagerId() : 0L)
 	            .createdAt(user.getCreatedAt())
 	            .build();
 	}

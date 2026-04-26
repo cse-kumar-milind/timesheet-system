@@ -3,7 +3,6 @@ package com.company.adminservice.controller;
 import com.company.adminservice.dto.*;
 import com.company.adminservice.service.AdminService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -25,7 +24,6 @@ public class AdminController {
 
     // ─── Dashboard ─────────────────────────────────────
 
-    // GET http://localhost:8080/admin/dashboard
     @Operation(summary = "Get dashboard", description = "[Manager/Admin] Fetch aggregated dashboard data")
     @GetMapping("/dashboard")
     @PreAuthorize("hasRole('ADMIN')")
@@ -42,11 +40,7 @@ public class AdminController {
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
             @Parameter(hidden = true) @RequestHeader("X-User-Email") String email) {
         
-        return ResponseEntity.ok(Map.of(
-            "pendingActions", 0,
-            "nextHoliday", "New Year",
-            "message", "Employee summary data retrieved"
-        ));
+        return ResponseEntity.ok(adminService.getEmployeeSummary(email));
     }
 
     // ─── Public Config ─────────────────────────────────
@@ -54,11 +48,7 @@ public class AdminController {
     @Operation(summary = "Get public configs", description = "[Public] Fetch static announcements and config")
     @GetMapping("/config/public")
     public ResponseEntity<Map<String, Object>> getPublicConfig() {
-        return ResponseEntity.ok(Map.of(
-            "status", "online",
-            "announcements", List.of("Timesheets due Friday!", "Welcome to the new system."),
-            "version", "1.0"
-        ));
+        return ResponseEntity.ok(adminService.getPublicConfig());
     }
 
     // ─── Master Data & Policies ─────────────────────────
@@ -68,9 +58,16 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> getPolicies(
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(Map.of(
-            "policies", List.of("Standard PTO", "Sick Leave")
-        ));
+        return ResponseEntity.ok(adminService.getPolicies());
+    }
+
+    @Operation(summary = "Add holiday", description = "[Admin] Add a new holiday to the calendar")
+    @PostMapping("/master/holidays")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Object> addHoliday(
+            @Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
+            @RequestBody HolidayDto holiday) {
+        return ResponseEntity.status(201).body(adminService.addHoliday(role, holiday));
     }
 
     // ─── Reports ────────────────────────────────────────
@@ -80,7 +77,7 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> getTimesheetCompliance(
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(Map.of("reportName", "Timesheet Compliance", "status", "GENERATED"));
+        return ResponseEntity.ok(adminService.getTimesheetCompliance());
     }
 
     @Operation(summary = "Get Leave Consumption Report", description = "[Admin] Generate leave report")
@@ -88,89 +85,36 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> getLeaveConsumption(
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(Map.of("reportName", "Leave Consumption", "status", "GENERATED"));
+        return ResponseEntity.ok(adminService.getLeaveConsumption());
     }
 
     // ─── Users ─────────────────────────────────────────
 
-    @Operation(summary = "Delete user by email", description = "[Admin] Delete a user account using raw email string as request body")
-    @DeleteMapping("/users")
+    @Operation(summary = "Delete user by ID", description = "[Admin] Soft delete a user account")
+    @DeleteMapping("/users/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<String> deleteUserByEmail(@RequestBody String email) {
-        return ResponseEntity.ok(adminService.deleteUserByEmail(email));
+    public ResponseEntity<String> deleteUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.deleteUserById(id));
     }
 
-    // GET http://localhost:8080/admin/users
     @Operation(summary = "Get all users", description = "[Admin] Fetch all registered users")
     @GetMapping("/users")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponse>> getAllUsers(
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-
-        if (!"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
 
         return ResponseEntity.ok(
             adminService.getAllUsers());
     }
 
-    // GET http://localhost:8080/admin/users/1
     @Operation(summary = "Get user by ID", description = "[Manager/Admin] Fetch a specific user's details")
     @GetMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> getUserById(
             @Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
             @PathVariable Long id) {
 
-        if (!"ADMIN".equals(role)
-                && !"MANAGER".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
-
         return ResponseEntity.ok(
             adminService.getUserById(id));
-    }
-
-    // ─── Timesheets ────────────────────────────────────
-
-    // GET http://localhost:8080/admin/timesheets/pending
-    @Operation(summary = "Get pending timesheets", description = "[Manager/Admin] Fetch all timesheets pending review")
-    @GetMapping("/timesheets/pending")
-    public ResponseEntity<List<TimesheetResponse>>
-            getPendingTimesheets(
-                @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-
-        if (!"MANAGER".equals(role)
-                && !"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
-
-        return ResponseEntity.ok(
-            adminService.getPendingTimesheets(role));
-    }
-
-    // ─── Leaves ────────────────────────────────────────
-
-    // GET http://localhost:8080/admin/leaves/pending
-    @Operation(summary = "Get pending leaves", description = "[Manager/Admin] Fetch all leave requests pending review")
-    @GetMapping("/leaves/pending")
-    public ResponseEntity<List<LeaveResponseDto>>
-            getPendingLeaves(
-                @Parameter(hidden = true) @RequestHeader("X-User-Role") String role) {
-
-        if (!"MANAGER".equals(role)
-                && !"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
-
-        return ResponseEntity.ok(
-            adminService.getPendingLeaves(role));
     }
 }

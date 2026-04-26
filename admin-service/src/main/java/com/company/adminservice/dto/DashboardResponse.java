@@ -1,6 +1,8 @@
 package com.company.adminservice.dto;
 
 import lombok.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter 
@@ -8,6 +10,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class DashboardResponse {
 
     // Timesheet stats
@@ -21,7 +24,10 @@ public class DashboardResponse {
     private long rejectedLeaves;
 
     // Lists
-    private List<TimesheetResponse> recentTimesheets;
-    private List<LeaveResponseDto> recentLeaves;
-    private List<UserResponse> allEmployees;
+    @Builder.Default
+    private List<TimesheetResponse> recentTimesheets = new ArrayList<>();
+    @Builder.Default
+    private List<LeaveResponseDto> recentLeaves = new ArrayList<>();
+    @Builder.Default
+    private List<UserResponse> allEmployees = new ArrayList<>();
 }

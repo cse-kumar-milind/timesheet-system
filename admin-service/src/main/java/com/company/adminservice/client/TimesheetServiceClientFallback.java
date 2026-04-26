@@ -13,4 +13,14 @@ public class TimesheetServiceClientFallback
             String role) {
         return List.of();
     }
+
+    @Override
+    public long getSubmittedCount(java.time.LocalDate weekStart) {
+        return 0;
+    }
+
+    @Override
+    public long getCountByStatus(String status) {
+        return 0;
+    }
 }

@@ -31,4 +31,13 @@ public class EventPublisher {
             log.error("Failed to publish user.role.changed event: {}", e.getMessage());
         }
     }
+
+    public void publishUserDeleted(UserDeletedEvent event) {
+        try {
+            rabbitTemplate.convertAndSend(AUTH_EXCHANGE, USER_DELETED_KEY, event);
+            log.info("Published user.deleted event for user ID: {}", event.getUserId());
+        } catch (Exception e) {
+            log.error("Failed to publish user.deleted event: {}", e.getMessage());
+        }
+    }
 }

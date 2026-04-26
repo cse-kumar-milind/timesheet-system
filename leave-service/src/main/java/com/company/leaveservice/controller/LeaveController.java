@@ -101,12 +101,7 @@ public class LeaveController {
 	public ResponseEntity<List<LeaveResponseDto>> getPendingRequests(
 			@Parameter(hidden = true) @RequestHeader("X-User-Role") String role){
 		
-		if (!"MANAGER".equals(role)
-                && !"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
+		
 		
 		return ResponseEntity.ok(leaveService.getPendingRequests());
 	}
@@ -119,12 +114,7 @@ public class LeaveController {
 			@Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
 			@PathVariable Long leaveId,
 			@Valid @RequestBody LeaveReviewDto request){
-		if (!"MANAGER".equals(role)
-                && !"ADMIN".equals(role)) {
-            return ResponseEntity
-                    .status(HttpStatus.FORBIDDEN)
-                    .build();
-        }
+		
 		
 		return ResponseEntity.ok(leaveService.reviewLeave(leaveId, managerId, request));
 		
@@ -143,16 +133,31 @@ public class LeaveController {
 		return ResponseEntity.ok(leaveService.getHolidays(year));
 	}
 	
-	@Operation(summary = "Add holiday", description = "[Admin] Add a new holiday to the calendar")
-	@PostMapping("/holidays")
-	@PreAuthorize("hasRole('ADMIN')")
-	public ResponseEntity<Holiday> addHoliday(
-			@Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
-			@Valid @RequestBody HolidayDto request){
-		
-		
-		return ResponseEntity.status(HttpStatus.CREATED).body(leaveService.addHoliday(request));
-	}
+    @Operation(summary = "Add holiday", description = "[Internal] Add a new holiday (Called by admin-service)", hidden = true)
+    @PostMapping("/holidays")
+    public ResponseEntity<Holiday> addHoliday(
+            @Parameter(hidden = true) @RequestHeader("X-User-Role") String role,
+            @Valid @RequestBody HolidayDto request){
+    	
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(leaveService.addHoliday(request));
+    }
 	
+    @Operation(summary = "Get approved counts by type", description = "[Internal] Aggregated data for consumption report", hidden = true)
+    @GetMapping("/internal/consumption")
+    public ResponseEntity<Map<String, Long>> getConsumptionStats() {
+        return ResponseEntity.ok(leaveService.getConsumptionStats());
+    }
 
+    @Operation(summary = "Get next holiday", description = "[Internal] Aggregated data for dashboard summary", hidden = true)
+    @GetMapping("/internal/next-holiday")
+    public ResponseEntity<String> getNextHoliday() {
+        return ResponseEntity.ok(leaveService.getNextHoliday());
+    }
+
+    @Operation(summary = "Get leave count by status", description = "[Internal] Fetch count for dashboard", hidden = true)
+    @GetMapping("/internal/count")
+    public ResponseEntity<Long> getCountByStatus(@RequestParam String status) {
+        return ResponseEntity.ok(leaveService.getCountByStatus(status));
+    }
 }

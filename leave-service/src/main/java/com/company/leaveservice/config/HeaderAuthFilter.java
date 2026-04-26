@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
+@Slf4j
 @Component
 public class HeaderAuthFilter extends OncePerRequestFilter {
     // ✅ This filter runs on every request
@@ -31,10 +34,10 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         String email  = request.getHeader("X-User-Email");
         String role   = request.getHeader("X-User-Role");
         
-        System.out.println(">>> LEAVE FILTER HIT");
-        System.out.println(">>> X-User-Id: " + userId);
-        System.out.println(">>> X-User-Email: " + email);
-        System.out.println(">>> X-User-Role: " + role);
+        log.debug(">>> LEAVE FILTER HIT");
+        log.debug(">>> X-User-Id: " + userId);
+        log.debug(">>> X-User-Email: " + email);
+        log.debug(">>> X-User-Role: " + role);
 
         // ✅ If headers exist → set authentication
         if (userId != null && role != null) {
