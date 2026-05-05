@@ -107,6 +107,8 @@ public class JwtAuthenticationFilter
         return path.startsWith("/auth/signup")
             || path.startsWith("/auth/login")
             || path.startsWith("/auth/forgot-password")
+            || path.startsWith("/auth/verify-otp")
+            || path.startsWith("/auth/reset-password")
             || path.startsWith("/actuator")
             || path.contains("/v3/api-docs")
             || path.contains("/swagger-ui")

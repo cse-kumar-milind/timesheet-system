@@ -10,50 +10,22 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    // ─── Exchange Names ────────────────────────────────────────
+    // ─── Exchange Name ─────────────────────────────────────────
     public static final String AUTH_EXCHANGE       = "auth.exchange";
-    public static final String TIMESHEET_EXCHANGE  = "timesheet.exchange";
-    public static final String LEAVE_EXCHANGE      = "leave.exchange";
-
-    // ─── Queue Names ───────────────────────────────────────────
-    public static final String USER_REGISTERED_QUEUE     = "user.registered.queue";
-    public static final String USER_ROLE_CHANGED_QUEUE   = "user.role.changed.queue";
-    public static final String TIMESHEET_SUBMITTED_QUEUE = "timesheet.submitted.queue";
-    public static final String TIMESHEET_APPROVED_QUEUE  = "timesheet.approved.queue";
-    public static final String TIMESHEET_REJECTED_QUEUE  = "timesheet.rejected.queue";
-    public static final String LEAVE_APPLIED_QUEUE       = "leave.applied.queue";
-    public static final String LEAVE_APPROVED_QUEUE      = "leave.approved.queue";
-    public static final String LEAVE_REJECTED_QUEUE      = "leave.rejected.queue";
-    public static final String LEAVE_CANCELLED_QUEUE     = "leave.cancelled.queue";
 
     // ─── Routing Keys ──────────────────────────────────────────
     public static final String USER_REGISTERED_KEY     = "user.registered";
     public static final String USER_ROLE_CHANGED_KEY   = "user.role.changed";
     public static final String USER_DELETED_KEY        = "user.deleted";
-    public static final String TIMESHEET_SUBMITTED_KEY = "timesheet.submitted";
-    public static final String TIMESHEET_APPROVED_KEY  = "timesheet.approved";
-    public static final String TIMESHEET_REJECTED_KEY  = "timesheet.rejected";
-    public static final String LEAVE_APPLIED_KEY       = "leave.applied";
-    public static final String LEAVE_APPROVED_KEY      = "leave.approved";
-    public static final String LEAVE_REJECTED_KEY      = "leave.rejected";
-    public static final String LEAVE_CANCELLED_KEY     = "leave.cancelled";
+    public static final String USER_OTP_REQUESTED_KEY  = "user.otp.requested";
 
-    // ─── Exchanges ─────────────────────────────────────────────
+    // ─── Exchange ──────────────────────────────────────────────
     @Bean
     public TopicExchange authExchange() {
         return new TopicExchange(AUTH_EXCHANGE);
     }
 
-    @Bean
-    public TopicExchange timesheetExchange() {
-        return new TopicExchange(TIMESHEET_EXCHANGE);
-    }
-
-    @Bean
-    public TopicExchange leaveExchange() {
-        return new TopicExchange(LEAVE_EXCHANGE);
-    }
-    // Removed Queues and Bindings since auth-service ONLY publishes events.
+    // auth-service ONLY publishes events — no queues or bindings needed.
 
     // ─── JSON Message Converter ────────────────────────────────
     @Bean

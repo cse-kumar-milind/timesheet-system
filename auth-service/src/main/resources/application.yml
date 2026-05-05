@@ -33,8 +33,9 @@ jwt:
   secret: ${JWT_SECRET:3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a7567c272e007b}
   expiration: ${JWT_EXPIRATION:86400000}
 
-
-
+otp:
+  expiry-minutes: ${OTP_EXPIRY_MINUTES:5}
+  reset-token-expiry-minutes: ${OTP_RESET_TOKEN_EXPIRY_MINUTES:10}
 eureka:
   client:
     service-url:

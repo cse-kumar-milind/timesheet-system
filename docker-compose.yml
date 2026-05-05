@@ -5,7 +5,7 @@ networks:
 
 services:
 
-  # ─── MySQL Database (Consolidated) ───────────────────────────
+  # ---------------------MySQL Database----------------------
 
   mysql-db:
     image: mysql:8.0
@@ -26,7 +26,7 @@ services:
       retries: 5
       start_period: 120s
 
-  # ─── Eureka Server ─────────────────────────────────────────────
+  # --------------------Eureka Server--------------------------
 
   eureka-server:
     build:
@@ -43,7 +43,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Zipkin (Distributed Tracing) ──────────────────────────────
+  # ---------------------Zipkin--------------------------
 
   zipkin:
     image: openzipkin/zipkin
@@ -53,7 +53,7 @@ services:
     networks:
       - timesheet-network
 
-  # ─── RabbitMQ (Message Broker) ─────────────────────────────────
+  # ---------------------RabbitMQ--------------------------
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -76,7 +76,7 @@ services:
       retries: 10
       start_period: 40s
 
-  # ─── Auth Service ──────────────────────────────────────────────
+  # --------------------Auth Service--------------------------
 
   auth-service:
     build:
@@ -107,7 +107,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-  # ─── API Gateway ───────────────────────────────────────────────
+  # ---------------------API Gateway--------------------------
 
   api-gateway:
     build:
@@ -126,7 +126,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-  # ─── Timesheet Service ─────────────────────────────────────────
+  # --------------------Timesheet Service--------------------------
 
   timesheet-service:
     build:
@@ -155,7 +155,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-  # ─── Leave Service ─────────────────────────────────────────────
+  # --------------------Leave Service--------------------------
 
   leave-service:
     build:
@@ -184,7 +184,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-  # ─── Admin Service ─────────────────────────────────────────────
+  # ------------------Admin Service-----------------------
 
   admin-service:
     build:
@@ -207,7 +207,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: ${ZIPKIN_URL}
 
-  # ─── Notification Service ──────────────────────────────────────
+  # ----------------Notification Service----------------
 
   notification-service:
     build:
@@ -235,6 +235,20 @@ services:
       SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
       SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
       MAIL_FROM: ${MAIL_FROM:-noreply@timesheet.com}
+      
+  #-------------Frontend--------------------
+  
+  frontend:
+    build:
+      context: ../Frontend/timesheet-system
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    networks:
+      - timesheet-network
+    depends_on:
+      - api-gateway
 
 volumes:
   mysql-data:

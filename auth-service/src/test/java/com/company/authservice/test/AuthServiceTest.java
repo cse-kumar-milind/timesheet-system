@@ -5,8 +5,11 @@ import com.company.authservice.model.User;
 import com.company.authservice.repository.UserRepository;
 import com.company.authservice.security.JwtService;
 import com.company.authservice.service.AuthService;
+import com.company.authservice.service.OtpService;
 import com.company.authservice.event.EventPublisher;
+import com.company.authservice.event.OtpEvent;
 import com.company.authservice.event.UserRegisteredEvent;
+import com.company.authservice.exception.InvalidOtpException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +54,9 @@ class AuthServiceTest {
 
     @Mock
     private EventPublisher eventPublisher;
+
+    @Mock
+    private OtpService otpService;
 
     // ✅ @InjectMocks creates real AuthService
     // and injects all @Mock objects into it
@@ -371,22 +377,120 @@ class AuthServiceTest {
     }
 
     // ═══════════════════════════════════════════════
-    // FORGOT PASSWORD TESTS
+    // FORGOT PASSWORD (OTP FLOW) TESTS
     // ═══════════════════════════════════════════════
 
     @Nested
-    @DisplayName("Forgot Password Tests")
+    @DisplayName("Forgot Password OTP Flow Tests")
     class ForgotPasswordTests {
 
+        // ── Step 1: Request OTP ──────────────────────
+
         @Test
-        @DisplayName("Should reset password successfully")
-        void forgotPassword_Success() {
+        @DisplayName("Should request OTP successfully")
+        void requestPasswordReset_Success() {
+            ForgotPasswordOtpRequest request =
+                new ForgotPasswordOtpRequest();
+            request.setEmail("john@example.com");
+
+            when(userRepository.findByEmail(
+                    "john@example.com"))
+                    .thenReturn(Optional.of(mockUser));
+            when(otpService.generateOtp("john@example.com"))
+                    .thenReturn("123456");
+
+            assertDoesNotThrow(() ->
+                authService.requestPasswordReset(request));
+
+            verify(otpService, times(1))
+                    .generateOtp("john@example.com");
+            verify(eventPublisher, times(1))
+                    .publishOtpRequested(any(OtpEvent.class));
+        }
+
+        @Test
+        @DisplayName("Should throw when email not found for OTP request")
+        void requestPasswordReset_EmailNotFound() {
+            ForgotPasswordOtpRequest request =
+                new ForgotPasswordOtpRequest();
+            request.setEmail("unknown@example.com");
+
+            when(userRepository.findByEmail(
+                    "unknown@example.com"))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(RuntimeException.class,
+                () -> authService.requestPasswordReset(request));
+
+            verify(otpService, never())
+                    .generateOtp(anyString());
+        }
+
+        // ── Step 2: Verify OTP ───────────────────────
+
+        @Test
+        @DisplayName("Should verify OTP and return reset token")
+        void verifyOtp_Success() {
+            VerifyOtpRequest request = new VerifyOtpRequest();
+            request.setEmail("john@example.com");
+            request.setOtp("123456");
+
+            when(userRepository.findByEmail(
+                    "john@example.com"))
+                    .thenReturn(Optional.of(mockUser));
+            when(otpService.generateResetToken(
+                    "john@example.com"))
+                    .thenReturn("mock-reset-token");
+
+            VerifyOtpResponse response =
+                authService.verifyOtp(request);
+
+            assertNotNull(response);
+            assertEquals("mock-reset-token",
+                response.getResetToken());
+            assertEquals("OTP verified successfully",
+                response.getMessage());
+
+            verify(otpService, times(1))
+                    .verifyOtp("john@example.com", "123456");
+            verify(otpService, times(1))
+                    .generateResetToken("john@example.com");
+        }
+
+        @Test
+        @DisplayName("Should throw when OTP is invalid")
+        void verifyOtp_InvalidOtp() {
+            VerifyOtpRequest request = new VerifyOtpRequest();
+            request.setEmail("john@example.com");
+            request.setOtp("000000");
+
+            when(userRepository.findByEmail(
+                    "john@example.com"))
+                    .thenReturn(Optional.of(mockUser));
+            doThrow(new InvalidOtpException("Invalid OTP"))
+                    .when(otpService)
+                    .verifyOtp("john@example.com", "000000");
+
+            assertThrows(InvalidOtpException.class,
+                () -> authService.verifyOtp(request));
+
+            verify(otpService, never())
+                    .generateResetToken(anyString());
+        }
+
+        // ── Step 3: Reset Password ───────────────────
+
+        @Test
+        @DisplayName("Should reset password with valid token")
+        void resetPassword_Success() {
             ForgotPasswordRequest request =
                 new ForgotPasswordRequest();
-            request.setEmail("john@example.com");
+            request.setResetToken("valid-token");
             request.setNewPassword("NewPass@123");
             request.setConfirmPassword("NewPass@123");
 
+            when(otpService.validateResetToken("valid-token"))
+                    .thenReturn("john@example.com");
             when(userRepository.findByEmail(
                     "john@example.com"))
                     .thenReturn(Optional.of(mockUser));
@@ -394,7 +498,7 @@ class AuthServiceTest {
                     .thenReturn("$2a$10$newEncodedPassword");
 
             assertDoesNotThrow(() ->
-                authService.forgotPassword(request));
+                authService.resetPassword(request));
 
             verify(userRepository, times(1))
                     .save(any(User.class));
@@ -402,20 +506,16 @@ class AuthServiceTest {
 
         @Test
         @DisplayName("Should throw when passwords don't match")
-        void forgotPassword_PasswordMismatch() {
+        void resetPassword_PasswordMismatch() {
             ForgotPasswordRequest request =
                 new ForgotPasswordRequest();
-            request.setEmail("john@example.com");
+            request.setResetToken("valid-token");
             request.setNewPassword("NewPass@123");
             request.setConfirmPassword("Different@123");
 
-            when(userRepository.findByEmail(
-                    "john@example.com"))
-                    .thenReturn(Optional.of(mockUser));
-
             RuntimeException exception =
                 assertThrows(RuntimeException.class,
-                    () -> authService.forgotPassword(request));
+                    () -> authService.resetPassword(request));
 
             assertEquals("Passwords do not match",
                 exception.getMessage());
@@ -425,20 +525,23 @@ class AuthServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw when email not found")
-        void forgotPassword_EmailNotFound() {
+        @DisplayName("Should throw when reset token is invalid")
+        void resetPassword_InvalidToken() {
             ForgotPasswordRequest request =
                 new ForgotPasswordRequest();
-            request.setEmail("unknown@example.com");
+            request.setResetToken("invalid-token");
             request.setNewPassword("NewPass@123");
             request.setConfirmPassword("NewPass@123");
 
-            when(userRepository.findByEmail(
-                    "unknown@example.com"))
-                    .thenReturn(Optional.empty());
+            when(otpService.validateResetToken("invalid-token"))
+                    .thenThrow(new InvalidOtpException(
+                            "Invalid or expired reset token"));
 
-            assertThrows(RuntimeException.class,
-                () -> authService.forgotPassword(request));
+            assertThrows(InvalidOtpException.class,
+                () -> authService.resetPassword(request));
+
+            verify(userRepository, never())
+                    .save(any());
         }
     }
     

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.company.notificationservice.service.EmailService;
 import com.company.notificationservice.event.LeaveStatusEvent;
+import com.company.notificationservice.event.OtpEvent;
 import com.company.notificationservice.event.TimesheetStatusEvent;
 import com.company.notificationservice.event.UserRegisteredEvent;
 
@@ -31,6 +32,12 @@ public class NotificationListener {
     public void handleUserRoleChanged(UserRegisteredEvent event) {
         log.info("USER ROLE CHANGED: {} → {}", event.getEmail(), event.getRole());
         emailService.sendEmail(event.getEmail(), "Role Updated", "Your role has been updated to: " + event.getRole());
+    }
+
+    @RabbitListener(queues = OTP_REQUESTED_QUEUE)
+    public void handleOtpRequested(OtpEvent event) {
+        log.info("OTP REQUESTED for: {}", event.getEmail());
+        emailService.sendOtpEmail(event.getEmail(), event.getFullName(), event.getOtp());
     }
 
     // ─── Timesheet Events ──────────────────────────────────────

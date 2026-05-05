@@ -49,4 +49,17 @@ public class EmailService {
         String body = String.format("Hello,%n%nYour %s Leave request has been %s.%nReviewer Comment: %s%n%nRegards,%nLeave Management Team", leaveType, status, comment != null ? comment : "N/A");
         sendEmail(to, subject, body);
     }
+
+    public void sendOtpEmail(String to, String name, String otp) {
+        String subject = "Password Reset OTP - Timesheet Management System";
+        String body = String.format(
+                "Hello %s,%n%n"
+                + "You have requested to reset your password.%n%n"
+                + "Your OTP is: %s%n%n"
+                + "This OTP is valid for 5 minutes. Do not share it with anyone.%n"
+                + "If you did not request this, please ignore this email.%n%n"
+                + "Regards,%nAdmin Team, TMS",
+                name, otp);
+        sendEmail(to, subject, body);
+    }
 }

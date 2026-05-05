@@ -41,6 +41,8 @@ public class SecurityConfig {
                     "/auth/users",
                     "/auth/users/**",
                     "/auth/forgot-password",
+                    "/auth/verify-otp",
+                    "/auth/reset-password",
                     "/auth/v3/api-docs",
                     "/auth/v3/api-docs/**",
                     "/v3/api-docs",

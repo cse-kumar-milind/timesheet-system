@@ -12,12 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 import com.company.authservice.dto.AuthResponse;
 import com.company.authservice.dto.ChangeRoleRequest;
 import com.company.authservice.dto.ChangeStatusRequest;
+import com.company.authservice.dto.ForgotPasswordOtpRequest;
 import com.company.authservice.dto.ForgotPasswordRequest;
 import com.company.authservice.dto.LoginRequest;
 import com.company.authservice.dto.SignupRequest;
 import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
+import com.company.authservice.dto.VerifyOtpRequest;
+import com.company.authservice.dto.VerifyOtpResponse;
 import com.company.authservice.event.EventPublisher;
+import com.company.authservice.event.OtpEvent;
 import com.company.authservice.event.UserRegisteredEvent;
 import com.company.authservice.exception.InvalidRoleChangeException;
 import com.company.authservice.exception.UserAlreadyExistsException;
@@ -40,6 +44,7 @@ public class AuthService {
 	private final JwtService jwtService;
 	private final AuthenticationManager authenticationManager;
 	private final EventPublisher eventPublisher;
+	private final OtpService otpService;
 	
 	private static final String USER_NOT_FOUND = "User not found with id: ";
 	
@@ -107,17 +112,51 @@ public class AuthService {
 	                .build();
 	}
 	
-	// ─── Forgot Password ───────────────────────────────
+	// ─── Forgot Password (Step 1): Request OTP ────────────────
 
-    public void forgotPassword(
-            ForgotPasswordRequest request) {
+    public void requestPasswordReset(ForgotPasswordOtpRequest request) {
     	
     	User user = userRepository
                 .findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException(
                         "No account found with email: "
                         + request.getEmail()));
-    	
+
+        String otp = otpService.generateOtp(request.getEmail());
+
+        eventPublisher.publishOtpRequested(OtpEvent.builder()
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .otp(otp)
+                .build());
+
+        log.info("OTP requested for password reset: {}", request.getEmail());
+    }
+
+    // ─── Forgot Password (Step 2): Verify OTP ────────────────
+
+    public VerifyOtpResponse verifyOtp(VerifyOtpRequest request) {
+
+        // Verify user exists
+        userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException(
+                        "No account found with email: "
+                        + request.getEmail()));
+
+        otpService.verifyOtp(request.getEmail(), request.getOtp());
+
+        String resetToken = otpService.generateResetToken(request.getEmail());
+
+        return VerifyOtpResponse.builder()
+                .resetToken(resetToken)
+                .message("OTP verified successfully")
+                .build();
+    }
+
+    // ─── Forgot Password (Step 3): Reset Password ────────────
+
+    public void resetPassword(ForgotPasswordRequest request) {
+
         // Check passwords match
         if (!request.getNewPassword()
                     .equals(request.getConfirmPassword())) {
@@ -125,12 +164,22 @@ public class AuthService {
                 "Passwords do not match");
         }
 
+        // Validate the reset token and get email
+        String email = otpService.validateResetToken(
+                request.getResetToken());
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException(
+                        "User not found"));
+
         user.setPassword(passwordEncoder.encode(
                 request.getNewPassword()));
         userRepository.save(user);
+
+        log.info("Password reset successfully for: {}", email);
     }
     
- // ─── Get Profile ───────────────────────────────────
+ // -------------------Get Profile---------------------
 
     public UserResponse getProfile(String email) {
         User user = userRepository

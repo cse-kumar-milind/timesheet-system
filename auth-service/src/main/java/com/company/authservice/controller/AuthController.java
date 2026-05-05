@@ -18,11 +18,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.company.authservice.dto.AuthResponse;
 import com.company.authservice.dto.ChangeRoleRequest;
 import com.company.authservice.dto.ChangeStatusRequest;
+import com.company.authservice.dto.ForgotPasswordOtpRequest;
 import com.company.authservice.dto.ForgotPasswordRequest;
 import com.company.authservice.dto.LoginRequest;
 import com.company.authservice.dto.SignupRequest;
 import com.company.authservice.dto.UpdateManagerRequest;
 import com.company.authservice.dto.UserResponse;
+import com.company.authservice.dto.VerifyOtpRequest;
+import com.company.authservice.dto.VerifyOtpResponse;
 import com.company.authservice.service.AuthService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,16 +58,34 @@ public class AuthController {
 		return ResponseEntity.ok(authResponse);
 	}
 	
-	@Operation(summary = "Forgot password", description = "Reset password using email verification")
+	@Operation(summary = "Forgot password - Step 1", description = "Request an OTP to be sent to the registered email")
 	@PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(
             @Valid @RequestBody
-                ForgotPasswordRequest request) {
-        authService.forgotPassword(request);
+                ForgotPasswordOtpRequest request) {
+        authService.requestPasswordReset(request);
         return ResponseEntity.ok(
-            "Password updated successfully!");
+            "OTP sent to your registered email");
     }
-	
+
+    @Operation(summary = "Verify OTP - Step 2", description = "Verify the OTP received via email and get a reset token")
+    @PostMapping("/verify-otp")
+    public ResponseEntity<VerifyOtpResponse> verifyOtp(
+            @Valid @RequestBody
+                VerifyOtpRequest request) {
+        return ResponseEntity.ok(
+            authService.verifyOtp(request));
+    }
+
+    @Operation(summary = "Reset password - Step 3", description = "Reset password using the verified reset token")
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(
+            @Valid @RequestBody
+                ForgotPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(
+            "Password reset successfully");
+    }
 	
 	
 	@Operation(summary = "Get my profile", description = "Fetch profile of the logged-in user")

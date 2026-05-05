@@ -34,6 +34,8 @@ class AuthControllerTest {
     private AuthResponse mockAuthResponse;
     private SignupRequest signupRequest;
     private LoginRequest loginRequest;
+    private ForgotPasswordOtpRequest forgotPasswordOtpRequest;
+    private VerifyOtpRequest verifyOtpRequest;
     private ForgotPasswordRequest forgotPasswordRequest;
     private ChangeRoleRequest changeRoleRequest;
     private ChangeStatusRequest changeStatusRequest;
@@ -82,9 +84,18 @@ class AuthControllerTest {
         loginRequest.setEmail("john@test.com");
         loginRequest.setPassword("Test@1234");
 
-        // ✅ ForgotPasswordRequest — fields: email, newPassword, confirmPassword
+        // ✅ ForgotPasswordOtpRequest — Step 1: email only
+        forgotPasswordOtpRequest = new ForgotPasswordOtpRequest();
+        forgotPasswordOtpRequest.setEmail("john@test.com");
+
+        // ✅ VerifyOtpRequest — Step 2: email + otp
+        verifyOtpRequest = new VerifyOtpRequest();
+        verifyOtpRequest.setEmail("john@test.com");
+        verifyOtpRequest.setOtp("123456");
+
+        // ✅ ForgotPasswordRequest — Step 3: resetToken, newPassword, confirmPassword
         forgotPasswordRequest = new ForgotPasswordRequest();
-        forgotPasswordRequest.setEmail("john@test.com");
+        forgotPasswordRequest.setResetToken("mock-reset-token");
         forgotPasswordRequest.setNewPassword("NewPass@1234");
         forgotPasswordRequest.setConfirmPassword("NewPass@1234");
 
@@ -175,29 +186,67 @@ class AuthControllerTest {
     }
 
     // ════════════════════════════════════════════════════════
-    // POST /auth/forgot-password → 200 OK
+    // POST /auth/forgot-password → Step 1: Request OTP
     // ════════════════════════════════════════════════════════
 
     @Test
-    void forgotPassword_shouldReturn200WithSuccessMessage() {
-        // ✅ authService.forgotPassword returns void
-        doNothing().when(authService).forgotPassword(forgotPasswordRequest);
+    void forgotPassword_shouldReturn200WithOtpSentMessage() {
+        doNothing().when(authService).requestPasswordReset(forgotPasswordOtpRequest);
 
         ResponseEntity<String> response =
-                authController.forgotPassword(forgotPasswordRequest);
+                authController.forgotPassword(forgotPasswordOtpRequest);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).isEqualTo("Password updated successfully!");
-        verify(authService).forgotPassword(forgotPasswordRequest);
+        assertThat(response.getBody()).isEqualTo("OTP sent to your registered email");
+        verify(authService).requestPasswordReset(forgotPasswordOtpRequest);
     }
 
     @Test
     void forgotPassword_shouldCallServiceOnce() {
-        doNothing().when(authService).forgotPassword(any(ForgotPasswordRequest.class));
+        doNothing().when(authService).requestPasswordReset(any(ForgotPasswordOtpRequest.class));
 
-        authController.forgotPassword(forgotPasswordRequest);
+        authController.forgotPassword(forgotPasswordOtpRequest);
 
-        verify(authService, times(1)).forgotPassword(forgotPasswordRequest);
+        verify(authService, times(1)).requestPasswordReset(forgotPasswordOtpRequest);
+    }
+
+    // ════════════════════════════════════════════════════════
+    // POST /auth/verify-otp → Step 2: Verify OTP
+    // ════════════════════════════════════════════════════════
+
+    @Test
+    void verifyOtp_shouldReturn200WithResetToken() {
+        VerifyOtpResponse mockOtpResponse = VerifyOtpResponse.builder()
+                .resetToken("mock-reset-token")
+                .message("OTP verified successfully")
+                .build();
+
+        when(authService.verifyOtp(verifyOtpRequest)).thenReturn(mockOtpResponse);
+
+        ResponseEntity<VerifyOtpResponse> response =
+                authController.verifyOtp(verifyOtpRequest);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getResetToken()).isEqualTo("mock-reset-token");
+        assertThat(response.getBody().getMessage()).isEqualTo("OTP verified successfully");
+        verify(authService).verifyOtp(verifyOtpRequest);
+    }
+
+    // ════════════════════════════════════════════════════════
+    // POST /auth/reset-password → Step 3: Reset Password
+    // ════════════════════════════════════════════════════════
+
+    @Test
+    void resetPassword_shouldReturn200WithSuccessMessage() {
+        doNothing().when(authService).resetPassword(forgotPasswordRequest);
+
+        ResponseEntity<String> response =
+                authController.resetPassword(forgotPasswordRequest);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo("Password reset successfully");
+        verify(authService).resetPassword(forgotPasswordRequest);
     }
 
     // ════════════════════════════════════════════════════════

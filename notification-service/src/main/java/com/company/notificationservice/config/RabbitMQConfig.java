@@ -25,6 +25,7 @@ public class RabbitMQConfig {
     public static final String LEAVE_APPROVED_QUEUE      = "notification.leave.approved.queue";
     public static final String LEAVE_REJECTED_QUEUE      = "notification.leave.rejected.queue";
     public static final String LEAVE_CANCELLED_QUEUE     = "notification.leave.cancelled.queue";
+    public static final String OTP_REQUESTED_QUEUE       = "notification.otp.requested.queue";
 
     // ─── Routing Keys ──────────────────────────────────────────
     public static final String USER_REGISTERED_KEY     = "user.registered";
@@ -36,6 +37,7 @@ public class RabbitMQConfig {
     public static final String LEAVE_APPROVED_KEY      = "leave.approved";
     public static final String LEAVE_REJECTED_KEY      = "leave.rejected";
     public static final String LEAVE_CANCELLED_KEY     = "leave.cancelled";
+    public static final String USER_OTP_REQUESTED_KEY  = "user.otp.requested";
 
     // ─── Exchanges ─────────────────────────────────────────────
     @Bean
@@ -81,6 +83,9 @@ public class RabbitMQConfig {
     @Bean public Queue leaveCancelledQueue() {
         return QueueBuilder.durable(LEAVE_CANCELLED_QUEUE).build();
     }
+    @Bean public Queue otpRequestedQueue() {
+        return QueueBuilder.durable(OTP_REQUESTED_QUEUE).build();
+    }
 
     // ─── Bindings ──────────────────────────────────────────────
     @Bean public Binding userRegisteredBinding() {
@@ -118,6 +123,10 @@ public class RabbitMQConfig {
     @Bean public Binding leaveCancelledBinding() {
         return BindingBuilder.bind(leaveCancelledQueue())
                 .to(leaveExchange()).with(LEAVE_CANCELLED_KEY);
+    }
+    @Bean public Binding otpRequestedBinding() {
+        return BindingBuilder.bind(otpRequestedQueue())
+                .to(authExchange()).with(USER_OTP_REQUESTED_KEY);
     }
 
     // ─── JSON Message Converter ────────────────────────────────

@@ -40,4 +40,13 @@ public class EventPublisher {
             log.error("Failed to publish user.deleted event: {}", e.getMessage());
         }
     }
+
+    public void publishOtpRequested(OtpEvent event) {
+        try {
+            rabbitTemplate.convertAndSend(AUTH_EXCHANGE, USER_OTP_REQUESTED_KEY, event);
+            log.info("Published user.otp.requested event for: {}", event.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to publish user.otp.requested event: {}", e.getMessage());
+        }
+    }
 }

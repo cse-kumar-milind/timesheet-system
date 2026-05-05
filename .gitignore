@@ -1,56 +1,42 @@
-# ===============================================
-# MAVEN BUILD OUTPUT
+# --------------------MAVEN BUILD OUTPUT----------------------  
 # Never commit compiled files!
-# ===============================================
+# --------------------------------------------------------
 **/target/
 **/*.jar
 **/*.war
 **/*.class
 
-# ===============================================
-# ECLIPSE IDE FILES
-# Other developers use different IDEs
-# don't force your IDE files on them
-# ===============================================
+# --------------------ECLIPSE IDE FILES-------------------  
 **/.classpath
 **/.project
 **/.settings/
 **/.factorypath
 **/bin/
 
-# ===============================================
-# INTELLIJ IDEA (in case you switch later)
-# ===============================================
+# --------------------INTELLIJ IDEA--------------------
 **/.idea/
 **/*.iml
 **/*.iws
 **/*.ipr
 
-# ===============================================
-# VS CODE
-# ===============================================
+# --------------------VS CODE--------------------
 **/.vscode/
 
-# ===============================================
-# SPRING BOOT — SENSITIVE CONFIG
+# --------------------SPRING BOOT----------------------
 # NEVER commit passwords or secrets!
-# ===============================================
+# ---------------------------------------------------------
 **/application-local.yml
 **/application-local.properties
 **/application-prod.yml
 **/application-prod.properties
 **/.env
 
-# ===============================================
-# LOGS
-# ===============================================
+# --------------------LOGS----------------------
 *.log
 **/logs/
 **/log/
 
-# ===============================================
-# OS GENERATED FILES
-# ===============================================
+# --------------------OS GENERATED FILES----------------------
 # Mac
 .DS_Store
 .AppleDouble
@@ -59,9 +45,7 @@
 Thumbs.db
 desktop.ini
 
-# ===============================================
-# MAVEN WRAPPER (optional — keep if you use it)
-# ===============================================
-# !.mvn/wrapper/maven-wrapper.jar
+# --------------------MAVEN WRAPPER----------------------
+!.mvn/wrapper/maven-wrapper.jar
 
 .metadata

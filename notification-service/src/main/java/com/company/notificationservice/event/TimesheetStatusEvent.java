@@ -2,8 +2,11 @@ package com.company.notificationservice.event;
 
 import lombok.*;
 
-@Getter @Setter @Builder
-@NoArgsConstructor @AllArgsConstructor
+@Getter 
+@Setter 
+@Builder
+@NoArgsConstructor 
+@AllArgsConstructor
 public class TimesheetStatusEvent {
     private Long timesheetId;
     private Long userId;

@@ -52,6 +52,15 @@ public class GlobalExceptionHandler {
 
         return buildError(ex, request, HttpStatus.BAD_REQUEST);
     }
+
+    // 🔴 Invalid OTP / Reset Token
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOtp(
+            InvalidOtpException ex,
+            HttpServletRequest request) {
+
+        return buildError(ex, request, HttpStatus.BAD_REQUEST);
+    }
     
 
     // 🔴 Access Denied
